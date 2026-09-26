@@ -349,16 +349,31 @@ export const GenModal: React.FC<{
   const [aspect, setAspect] = useState('1:1');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImg, setGeneratedImg] = useState<string | null>(null);
+  const [isFallbackImg, setIsFallbackImg] = useState(false);
+  const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (model === 'mj') {
       const mjPrompt = `${prompt} --ar ${aspect} --v 6.1`;
       await navigator.clipboard.writeText(mjPrompt);
-      onToast('Midjourney command copied to clipboard ✓', 'ok');
+      onToast('Midjourney prompt copied to clipboard ✓', 'ok');
+      return;
+    }
+    if (model === 'dalle') {
+      const dallePrompt = `Generate photo with aspect ratio ${aspect}: ${prompt}`;
+      await navigator.clipboard.writeText(dallePrompt);
+      onToast('DALL·E 3 prompt copied to clipboard ✓', 'ok');
+      return;
+    }
+    if (model === 'flux') {
+      const fluxPrompt = `${prompt}, aspect_ratio=${aspect}, style=raw photorealistic`;
+      await navigator.clipboard.writeText(fluxPrompt);
+      onToast('Flux prompt copied to clipboard ✓', 'ok');
       return;
     }
 
     setIsGenerating(true);
+    setQuotaWarning(null);
     try {
       const res = await fetch('/api/gemini/generate-image', {
         method: 'POST',
@@ -368,7 +383,18 @@ export const GenModal: React.FC<{
       const data = await res.json();
       if (data.imageUrl) {
         setGeneratedImg(data.imageUrl);
-        onToast('Image generated successfully ✓', 'ok');
+        setIsFallbackImg(!!data.isFallback);
+        if (data.quotaExceeded) {
+          setQuotaWarning(
+            'Gemini 3.1 Flash Image requires a paid API key (free tier limit is 0). Rendered high-fidelity concept preview. Select a paid key in AI Studio for native model outputs.'
+          );
+          onToast('Quota reached: Concept preview rendered', 'ok');
+        } else if (data.isFallback) {
+          setQuotaWarning(data.message || 'Synthesized visual concept rendered.');
+          onToast('Visual concept preview rendered', 'ok');
+        } else {
+          onToast('Image generated successfully ✓', 'ok');
+        }
       } else {
         throw new Error(data.error || 'Failed to generate');
       }
@@ -379,19 +405,28 @@ export const GenModal: React.FC<{
     }
   };
 
+  const handleDownload = () => {
+    if (!generatedImg) return;
+    const a = document.createElement('a');
+    a.href = generatedImg;
+    a.download = `promptlens-concept-${Date.now()}.${isFallbackImg ? 'svg' : 'png'}`;
+    a.click();
+    onToast('Image downloaded ✓', 'ok');
+  };
+
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} kicker="IMAGE GENERATOR" title="Generate Image" maxWidth="max-w-2xl">
       <div className="flex flex-col gap-4">
         {/* Model selector */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {(['gemini', 'mj', 'dalle', 'flux'] as const).map((m) => (
             <button
               key={m}
               onClick={() => setModel(m)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold uppercase cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold uppercase cursor-pointer transition-all ${
                 model === m
-                  ? 'bg-gradient-to-b from-[#ffc267] to-[#ff9a3d] text-[#2a1706] font-bold'
-                  : 'bg-[#0e1d1a] border border-[#22403a] text-[#8faea5]'
+                  ? 'bg-gradient-to-b from-[#ffc267] to-[#ff9a3d] text-[#2a1706] font-bold shadow-md'
+                  : 'bg-[#0e1d1a] border border-[#22403a] text-[#8faea5] hover:border-[#37d6c0]'
               }`}
             >
               {m === 'gemini' ? 'Gemini 3.1 Flash' : m === 'mj' ? 'Midjourney' : m === 'dalle' ? 'DALL·E 3' : 'Flux'}
@@ -406,8 +441,8 @@ export const GenModal: React.FC<{
             <button
               key={ar}
               onClick={() => setAspect(ar)}
-              className={`px-2.5 py-1 text-xs font-mono rounded-lg cursor-pointer ${
-                aspect === ar ? 'bg-[#37d6c0] text-[#06231e] font-bold' : 'bg-[#0e1d1a] text-[#8faea5]'
+              className={`px-2.5 py-1 text-xs font-mono rounded-lg cursor-pointer transition-colors ${
+                aspect === ar ? 'bg-[#37d6c0] text-[#06231e] font-bold' : 'bg-[#0e1d1a] text-[#8faea5] hover:text-white'
               }`}
             >
               {ar}
@@ -415,19 +450,53 @@ export const GenModal: React.FC<{
           ))}
         </div>
 
+        {/* Quota notice if triggered */}
+        {quotaWarning && (
+          <div className="bg-[#241707] border border-[#ffb45455] rounded-xl p-3 text-xs text-[#ffc267] flex items-start gap-2.5 animate-fadeIn">
+            <span className="text-base leading-none">⚡</span>
+            <div className="flex-1">
+              <p className="font-semibold text-[#ffc267]">{quotaWarning}</p>
+              <p className="text-[11px] text-[#ffb454bb] mt-0.5">
+                Note: Standard text & vision features (Gemini 3.8 Flash) are fully active on the free tier. Image generation models require a billing-enabled key.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Prompt Preview */}
         <div className="bg-[#0a1614] border border-[#22403a] rounded-xl p-3 font-mono text-xs text-[#9fc3ba] max-h-24 overflow-y-auto">
           {prompt || 'No prompt loaded'}
         </div>
 
         {/* Result Area */}
-        <div className="bg-[#0a1614] border border-[#22403a] rounded-xl min-h-[160px] flex items-center justify-center p-3 overflow-hidden">
+        <div className="bg-[#0a1614] border border-[#22403a] rounded-xl min-h-[180px] flex flex-col items-center justify-center p-3 overflow-hidden relative">
           {isGenerating ? (
-            <div className="text-center font-mono text-xs text-[#ffb454] animate-pulse">
-              Generating image with Gemini AI…
+            <div className="text-center font-mono text-xs text-[#ffb454] animate-pulse flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-[#ffb454] border-t-transparent rounded-full animate-spin" />
+              <span>Generating image with Gemini AI…</span>
             </div>
           ) : generatedImg ? (
-            <img src={generatedImg} alt="Generated" className="max-h-[260px] object-contain rounded-lg" />
+            <div className="relative group w-full flex flex-col items-center">
+              <img
+                src={generatedImg}
+                alt="Generated Visual"
+                className="max-h-[280px] w-auto object-contain rounded-lg shadow-lg border border-[#22403a]"
+                referrerPolicy="no-referrer"
+              />
+              <div className="flex items-center gap-2 mt-3">
+                {isFallbackImg && (
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-[#ffb45422] text-[#ffb454] border border-[#ffb45444]">
+                    AI Visual Concept
+                  </span>
+                )}
+                <button
+                  onClick={handleDownload}
+                  className="px-3 py-1 bg-[#163832] hover:bg-[#224e46] text-[#37d6c0] text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                >
+                  Download {isFallbackImg ? 'SVG' : 'Image'}
+                </button>
+              </div>
+            </div>
           ) : (
             <span className="text-xs text-[#54736c]">Generated image will appear here</span>
           )}
@@ -438,7 +507,15 @@ export const GenModal: React.FC<{
           disabled={isGenerating || !prompt}
           className="btn-amber py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-40"
         >
-          <span>{model === 'mj' ? 'Copy Midjourney Prompt' : 'Generate Now'}</span>
+          <span>
+            {model === 'gemini'
+              ? 'Generate with Gemini'
+              : model === 'mj'
+              ? 'Copy Midjourney Prompt'
+              : model === 'dalle'
+              ? 'Copy DALL·E 3 Prompt'
+              : 'Copy Flux Prompt'}
+          </span>
         </button>
       </div>
     </ModalWrapper>

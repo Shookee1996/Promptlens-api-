@@ -1,12 +1,17 @@
 import React from 'react';
 import { Sliders, Activity, Mail, Info, KeyRound } from 'lucide-react';
 import { I18N } from '../utils/i18n';
+import { LatencyRateLimiterBar } from './LatencyRateLimiterBar';
+import { LatencyMetrics, RateLimitState } from '../types';
 
 interface TopBarProps {
   lang: 'en' | 'ar' | 'fr' | 'es';
   onLangChange: (lang: 'en' | 'ar' | 'fr' | 'es') => void;
   apiCount: number;
   hasActiveApi: boolean;
+  latestLatency: LatencyMetrics | null;
+  rateLimitState: RateLimitState;
+  onRefreshPing: () => void;
   onOpenAdv: () => void;
   onOpenPerf: () => void;
   onOpenContact: () => void;
@@ -19,6 +24,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onLangChange,
   apiCount,
   hasActiveApi,
+  latestLatency,
+  rateLimitState,
+  onRefreshPing,
   onOpenAdv,
   onOpenPerf,
   onOpenContact,
@@ -72,6 +80,13 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="flex items-center gap-2.5 flex-wrap">
+        {/* Real-time Response Latency & Rate Limit Gauge */}
+        <LatencyRateLimiterBar
+          latestLatency={latestLatency}
+          rateLimitState={rateLimitState}
+          onRefreshPing={onRefreshPing}
+        />
+
         <button
           onClick={onOpenAdv}
           className="inline-flex items-center gap-2 bg-[#0f1e1c] border border-[#23423c] hover:border-[#ffb454] text-[#cfe6df] hover:text-[#ffd9a8] rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer transition-all duration-300 hover:-translate-y-0.5 shadow-sm"

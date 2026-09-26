@@ -10,8 +10,12 @@ import {
   Redo2,
   Columns2,
   Rocket,
+  Wand2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { BatchItem, AppOptions, AdvancedFeatures } from '../types';
+import { SuggestionsPanel } from './SuggestionsPanel';
 import { I18N } from '../utils/i18n';
 
 interface StudioPanelProps {
@@ -19,6 +23,7 @@ interface StudioPanelProps {
   opts: AppOptions;
   adv: AdvancedFeatures;
   lang: 'en' | 'ar' | 'fr' | 'es';
+  remoteEditorName?: string | null;
   onOptsChange: (newOpts: Partial<AppOptions>) => void;
   onPromptChange: (newPrompt: string) => void;
   onEnhance: () => void;
@@ -40,6 +45,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   opts,
   adv,
   lang,
+  remoteEditorName,
   onOptsChange,
   onPromptChange,
   onEnhance,
@@ -59,6 +65,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   const promptText = item?.finalPrompt || '';
   const negText = item?.finalNeg || '';
   const isJson = opts.format === 'json';
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
   const wordsCount = promptText.trim() ? promptText.trim().split(/\s+/).length : 0;
   const charsCount = promptText.length;
@@ -71,6 +78,17 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
     } catch {
       onToast('Failed to copy', 'err');
     }
+  };
+
+  const handleApplySuggestion = (suggestionText: string) => {
+    if (!promptText.trim()) {
+      onPromptChange(suggestionText);
+      return;
+    }
+    // Append neatly with comma or sentence break
+    const endsWithPunctuation = /[,.!;]\s*$/.test(promptText);
+    const separator = endsWithPunctuation ? ' ' : ', ';
+    onPromptChange(`${promptText.trim()}${separator}${suggestionText}`);
   };
 
   return (
@@ -186,9 +204,30 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
       {/* Output Label & Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-xs font-bold text-white tracking-wide">{t.outLabel}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-white tracking-wide">{t.outLabel}</span>
+          {remoteEditorName && (
+            <span className="inline-flex items-center gap-1.5 bg-[#a855f718] border border-[#a855f744] text-[#d8c7ff] px-2 py-0.5 rounded-full text-[10px] font-mono animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7]" />
+              <span>{remoteEditorName} is typing…</span>
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowSuggestions(!showSuggestions)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
+              showSuggestions
+                ? 'bg-[#37d6c015] border-[#37d6c0] text-[#37d6c0]'
+                : 'bg-[#0e1d1a] border-[#22403a] text-[#8faea5]'
+            }`}
+          >
+            <Wand2 className="w-3 h-3" />
+            <span>Suggestions</span>
+            {showSuggestions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+
           <button
             onClick={onUndo}
             disabled={!canUndo}
@@ -233,7 +272,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           value={promptText}
           onChange={(e) => onPromptChange(e.target.value)}
           placeholder={t.outPh}
-          rows={7}
+          rows={6}
           dir={opts.pLang === 'ar' && !isJson ? 'rtl' : 'ltr'}
           className="w-full bg-[#0a1614] border border-[#22403a] focus:border-[#ffb454] rounded-2xl p-4 font-mono text-sm leading-relaxed text-[#dcefe9] outline-none shadow-inner transition-all duration-300 resize-y"
         />
@@ -253,6 +292,19 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           <b className="text-[#9fc3ba]">~{tokensEst}</b> {t.sTokens}
         </span>
       </div>
+
+      {/* Text Enhancement Suggestions Accordion */}
+      {showSuggestions && (
+        <div className="animate-fadeIn">
+          <SuggestionsPanel
+            currentPrompt={promptText}
+            activeItem={item}
+            lang={lang}
+            onApplySuggestion={handleApplySuggestion}
+            onToast={onToast}
+          />
+        </div>
+      )}
 
       {/* Negative Prompt (if applicable) */}
       {(opts.style === 'sd' || adv.autoneg) && negText && !isJson && (
@@ -331,26 +383,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           <Download className="w-4 h-4" />
           <span>{t.btnDownload}</span>
         </button>
-      </div>
-
-      <div className="font-mono text-[10px] text-[#4d6b64] bg-[#0e1d1a] border border-[#1d3833] rounded-lg p-2 flex items-center gap-2 flex-wrap">
-        <span>Shortcuts:</span>
-        <kbd className="bg-[#16302b] px-1.5 py-0.5 rounded text-[#9fc3ba] border border-[#2a4a44]">
-          Ctrl+Z
-        </kbd>{' '}
-        Undo
-        <kbd className="bg-[#16302b] px-1.5 py-0.5 rounded text-[#9fc3ba] border border-[#2a4a44]">
-          Ctrl+Y
-        </kbd>{' '}
-        Redo
-        <kbd className="bg-[#16302b] px-1.5 py-0.5 rounded text-[#9fc3ba] border border-[#2a4a44]">
-          Ctrl+Shift+C
-        </kbd>{' '}
-        Compare
-        <kbd className="bg-[#16302b] px-1.5 py-0.5 rounded text-[#9fc3ba] border border-[#2a4a44]">
-          Ctrl+G
-        </kbd>{' '}
-        Generate Image
       </div>
     </section>
   );

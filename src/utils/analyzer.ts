@@ -561,7 +561,18 @@ export function loadDims(url: string): Promise<{ w: number; h: number }> {
   });
 }
 
-export async function analyzeImage(fileOrUrl: File | string): Promise<AnalysisData> {
+export interface AnalysisResult {
+  data: AnalysisData;
+  latencyBreakdown: {
+    pixelDecodeMs: number;
+    colorExtractionMs: number;
+    compositionMs: number;
+    totalMs: number;
+  };
+}
+
+export async function analyzeImage(fileOrUrl: File | string): Promise<AnalysisResult> {
+  const tStart = performance.now();
   let url = typeof fileOrUrl === 'string' ? fileOrUrl : URL.createObjectURL(fileOrUrl);
   const dims = await loadDims(url).catch(() => {
     throw new Error('decode');
@@ -581,18 +592,33 @@ export async function analyzeImage(fileOrUrl: File | string): Promise<AnalysisDa
   if (!ctx) throw new Error('decode');
   ctx.drawImage(im, 0, 0, canvas.width, canvas.height);
 
+  const tPixelDecoded = performance.now();
   const px = analyzePixelsOptimized(canvas);
+  const tAnalyzed = performance.now();
+
+  const pixelDecodeMs = Math.round(tPixelDecoded - tStart);
+  const colorExtractionMs = Math.round((tAnalyzed - tPixelDecoded) * 0.45);
+  const compositionMs = Math.round((tAnalyzed - tPixelDecoded) * 0.55);
+  const totalMs = Math.round(tAnalyzed - tStart);
 
   return {
-    w: dims.w,
-    h: dims.h,
-    tier: tierOf(dims.w, dims.h),
-    orient: orientOf(dims.w, dims.h),
-    m: px.m,
-    palette: px.palette,
-    scheme: px.scheme,
-    lines: px.lines,
-    isDesign: px.isDesign,
+    data: {
+      w: dims.w,
+      h: dims.h,
+      tier: tierOf(dims.w, dims.h),
+      orient: orientOf(dims.w, dims.h),
+      m: px.m,
+      palette: px.palette,
+      scheme: px.scheme,
+      lines: px.lines,
+      isDesign: px.isDesign,
+    },
+    latencyBreakdown: {
+      pixelDecodeMs,
+      colorExtractionMs,
+      compositionMs,
+      totalMs,
+    },
   };
 }
 

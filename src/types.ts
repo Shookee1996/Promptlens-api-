@@ -88,6 +88,15 @@ export interface ApiInterface {
   _encrypted?: boolean;
 }
 
+export interface LatencyMetrics {
+  pixelDecodeMs: number;
+  colorExtractionMs: number;
+  compositionMs: number;
+  apiRoundtripMs: number;
+  totalMs: number;
+  pingMs: number;
+}
+
 export interface BatchItem {
   id: number;
   name: string;
@@ -108,6 +117,7 @@ export interface BatchItem {
   viaApi?: boolean;
   history?: string[];
   historyIndex?: number;
+  latency?: LatencyMetrics;
 }
 
 export interface AdvancedFeatures {
@@ -132,4 +142,30 @@ export interface AppOptions {
   enhance: boolean;
   target: number; // 0..6
   format: 'text' | 'json';
+}
+
+export interface CollaboratorUser {
+  id: string;
+  name: string;
+  color: string;
+  status: 'idle' | 'editing' | 'analyzing' | 'batch';
+}
+
+export interface RateLimitState {
+  remaining: number;
+  limit: number;
+  resetSec: number;
+  isLimited: boolean;
+  cooldownSec: number;
+}
+
+export interface BatchWorkerConfig {
+  concurrency: 1 | 2 | 4 | 8;
+  isProcessing: boolean;
+  isPaused: boolean;
+  completedCount: number;
+  failedCount: number;
+  totalCount: number;
+  avgTimePerItemMs: number;
+  etaSeconds: number;
 }
