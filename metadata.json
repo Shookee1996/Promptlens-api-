@@ -1,0 +1,6 @@
+{
+  "name": "Promptlens-api",
+  "description": "Image analysis and AI prompt generator with multi-API vision support, interconnected features, 1K to 12K quality engine, and AES-256 encryption.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
