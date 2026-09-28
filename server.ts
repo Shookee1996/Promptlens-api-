@@ -3,13 +3,17 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const isProd = process.env.NODE_ENV === 'production';
 
 app.use(express.json({ limit: '60mb' }));
@@ -713,8 +717,8 @@ async function startServer() {
     });
   }
 
-  server.listen(PORT, () => {
-    console.log(`Server and WebSocket running on http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server and WebSocket running on http://0.0.0.0:${PORT}`);
   });
 }
 
