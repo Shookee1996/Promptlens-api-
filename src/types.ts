@@ -115,6 +115,7 @@ export interface BatchItem {
   finalNeg?: string | null;
   struct?: any;
   viaApi?: boolean;
+  apiEngine?: string;
   history?: string[];
   historyIndex?: number;
   latency?: LatencyMetrics;
@@ -142,21 +143,6 @@ export interface AppOptions {
   enhance: boolean;
   target: number; // 0..6
   format: 'text' | 'json';
-}
-
-export interface CollaboratorUser {
-  id: string;
-  name: string;
-  color: string;
-  status: 'idle' | 'editing' | 'analyzing' | 'batch';
-}
-
-export interface RateLimitState {
-  remaining: number;
-  limit: number;
-  resetSec: number;
-  isLimited: boolean;
-  cooldownSec: number;
 }
 
 export interface BatchWorkerConfig {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Sparkles,
   Share2,
@@ -10,12 +10,8 @@ import {
   Redo2,
   Columns2,
   Rocket,
-  Wand2,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { BatchItem, AppOptions, AdvancedFeatures } from '../types';
-import { SuggestionsPanel } from './SuggestionsPanel';
 import { I18N } from '../utils/i18n';
 
 interface StudioPanelProps {
@@ -23,7 +19,6 @@ interface StudioPanelProps {
   opts: AppOptions;
   adv: AdvancedFeatures;
   lang: 'en' | 'ar' | 'fr' | 'es';
-  remoteEditorName?: string | null;
   onOptsChange: (newOpts: Partial<AppOptions>) => void;
   onPromptChange: (newPrompt: string) => void;
   onEnhance: () => void;
@@ -45,7 +40,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   opts,
   adv,
   lang,
-  remoteEditorName,
   onOptsChange,
   onPromptChange,
   onEnhance,
@@ -65,7 +59,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   const promptText = item?.finalPrompt || '';
   const negText = item?.finalNeg || '';
   const isJson = opts.format === 'json';
-  const [showSuggestions, setShowSuggestions] = useState(true);
 
   const wordsCount = promptText.trim() ? promptText.trim().split(/\s+/).length : 0;
   const charsCount = promptText.length;
@@ -78,17 +71,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
     } catch {
       onToast('Failed to copy', 'err');
     }
-  };
-
-  const handleApplySuggestion = (suggestionText: string) => {
-    if (!promptText.trim()) {
-      onPromptChange(suggestionText);
-      return;
-    }
-    // Append neatly with comma or sentence break
-    const endsWithPunctuation = /[,.!;]\s*$/.test(promptText);
-    const separator = endsWithPunctuation ? ' ' : ', ';
-    onPromptChange(`${promptText.trim()}${separator}${suggestionText}`);
   };
 
   return (
@@ -204,30 +186,17 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
 
       {/* Output Label & Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-white tracking-wide">{t.outLabel}</span>
-          {remoteEditorName && (
-            <span className="inline-flex items-center gap-1.5 bg-[#a855f718] border border-[#a855f744] text-[#d8c7ff] px-2 py-0.5 rounded-full text-[10px] font-mono animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7]" />
-              <span>{remoteEditorName} is typing…</span>
+          {item?.apiEngine && (
+            <span className="text-[10px] font-mono text-[#37d6c0] bg-[#0e2e28] px-2 py-0.5 rounded-md border border-[#22403a] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3ddc84] animate-pulse" />
+              <span>{item.apiEngine}</span>
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShowSuggestions(!showSuggestions)}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-colors cursor-pointer ${
-              showSuggestions
-                ? 'bg-[#37d6c015] border-[#37d6c0] text-[#37d6c0]'
-                : 'bg-[#0e1d1a] border-[#22403a] text-[#8faea5]'
-            }`}
-          >
-            <Wand2 className="w-3 h-3" />
-            <span>Suggestions</span>
-            {showSuggestions ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
           <button
             onClick={onUndo}
             disabled={!canUndo}
@@ -292,19 +261,6 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           <b className="text-[#9fc3ba]">~{tokensEst}</b> {t.sTokens}
         </span>
       </div>
-
-      {/* Text Enhancement Suggestions Accordion */}
-      {showSuggestions && (
-        <div className="animate-fadeIn">
-          <SuggestionsPanel
-            currentPrompt={promptText}
-            activeItem={item}
-            lang={lang}
-            onApplySuggestion={handleApplySuggestion}
-            onToast={onToast}
-          />
-        </div>
-      )}
 
       {/* Negative Prompt (if applicable) */}
       {(opts.style === 'sd' || adv.autoneg) && negText && !isJson && (

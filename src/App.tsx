@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TopBar } from './components/TopBar';
-import { CollaborationBar } from './components/CollaborationBar';
 import { QualityDeck } from './components/QualityDeck';
 import { BatchCenter } from './components/BatchCenter';
 import { IntakePanel } from './components/IntakePanel';
@@ -20,43 +19,12 @@ import {
   AppOptions,
   AdvancedFeatures,
   ApiInterface,
-  CollaboratorUser,
-  RateLimitState,
   LatencyMetrics,
   BatchWorkerConfig,
 } from './types';
 import { analyzeImage, classify, confidence, buildPrompt } from './utils/analyzer';
 import { secureStore } from './utils/crypto';
 import { I18N } from './utils/i18n';
-
-// Random user generation for collaboration
-const ARTIST_NAMES = [
-  'Cyan Falcon',
-  'Amber Lens',
-  'Teal Visionary',
-  'Emerald Prism',
-  'Solar Chroma',
-  'Nova Pixel',
-  'Quantum Iris',
-  'Aero Shutter',
-];
-
-const COLLAB_COLORS = [
-  '#37d6c0',
-  '#ffb454',
-  '#a855f7',
-  '#59c2e8',
-  '#3ddc84',
-  '#ff6b7a',
-  '#ff9a3d',
-];
-
-function getRandomUser(): CollaboratorUser {
-  const name = ARTIST_NAMES[Math.floor(Math.random() * ARTIST_NAMES.length)];
-  const color = COLLAB_COLORS[Math.floor(Math.random() * COLLAB_COLORS.length)];
-  const id = 'user_' + Math.random().toString(36).substring(2, 9);
-  return { id, name, color, status: 'idle' };
-}
 
 export default function App() {
   const [lang, setLang] = useState<'en' | 'ar' | 'fr' | 'es'>('en');
@@ -91,15 +59,7 @@ export default function App() {
   const [apis, setApis] = useState<ApiInterface[]>([]);
   const [activeApiId, setActiveApiId] = useState<string | null>(null);
 
-  // Rate Limiting & Latency States
-  const [rateLimitState, setRateLimitState] = useState<RateLimitState>({
-    remaining: 35,
-    limit: 35,
-    resetSec: 60,
-    isLimited: false,
-    cooldownSec: 0,
-  });
-
+  // Latency Metrics State
   const [latestLatency, setLatestLatency] = useState<LatencyMetrics | null>({
     pixelDecodeMs: 24,
     colorExtractionMs: 18,
@@ -123,15 +83,6 @@ export default function App() {
   const batchPausedRef = useRef(false);
   const batchCanceledRef = useRef(false);
 
-  // Real-Time Collaboration State
-  const [roomId, setRoomId] = useState<string>('main-studio');
-  const [currentUser] = useState<CollaboratorUser>(() => getRandomUser());
-  const [collaborators, setCollaborators] = useState<CollaboratorUser[]>([]);
-  const [isWsConnected, setIsWsConnected] = useState(false);
-  const [remoteEditorName, setRemoteEditorName] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const remoteEditorTimerRef = useRef<any>(null);
-
   // Modals state
   const [modalState, setModalState] = useState({
     adv: false,
@@ -153,42 +104,6 @@ export default function App() {
     toastTimeoutRef.current = setTimeout(() => setToastMsg(null), 3000);
   };
 
-  // Helper to extract rate limit headers from fetch response
-  const handleRateLimitHeaders = (res: Response) => {
-    const remaining = res.headers.get('x-ratelimit-remaining');
-    const limit = res.headers.get('x-ratelimit-limit');
-    if (remaining !== null) {
-      setRateLimitState((prev) => ({
-        ...prev,
-        remaining: Math.max(0, parseInt(remaining, 10)),
-        limit: limit ? parseInt(limit, 10) : prev.limit,
-      }));
-    }
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get('retry-after') || '30', 10);
-      setRateLimitState((prev) => ({
-        ...prev,
-        isLimited: true,
-        cooldownSec: retryAfter,
-      }));
-      showToast(`Rate limit reached. Cooldown: ${retryAfter}s`, 'err');
-    }
-  };
-
-  // Cooldown timer interval
-  useEffect(() => {
-    if (!rateLimitState.isLimited || rateLimitState.cooldownSec <= 0) return;
-    const timer = setInterval(() => {
-      setRateLimitState((prev) => {
-        if (prev.cooldownSec <= 1) {
-          return { ...prev, isLimited: false, cooldownSec: 0, remaining: prev.limit };
-        }
-        return { ...prev, cooldownSec: prev.cooldownSec - 1 };
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [rateLimitState.isLimited, rateLimitState.cooldownSec]);
-
   // Ping Server to measure network latency
   const measurePing = async () => {
     const t0 = performance.now();
@@ -206,133 +121,6 @@ export default function App() {
     const interval = setInterval(measurePing, 20000);
     return () => clearInterval(interval);
   }, []);
-
-  // Initialize Room from URL param if available
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
-    if (roomParam) {
-      setRoomId(roomParam);
-    }
-  }, []);
-
-  // WebSocket Real-time collaboration connection
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    let ws: WebSocket;
-    let reconnectTimeout: any;
-
-    function connect() {
-      try {
-        ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          setIsWsConnected(true);
-          // Join room
-          ws.send(
-            JSON.stringify({
-              type: 'join',
-              roomId,
-              user: currentUser,
-            })
-          );
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            switch (msg.type) {
-              case 'room:init':
-                setCollaborators(msg.users || []);
-                break;
-
-              case 'user:joined':
-                setCollaborators((prev) => {
-                  if (prev.some((u) => u.id === msg.user.id)) return prev;
-                  return [...prev, msg.user];
-                });
-                showToast(`${msg.user.name} joined the collaboration room`, 'ok');
-                break;
-
-              case 'user:left':
-                setCollaborators((prev) => prev.filter((u) => u.id !== msg.userId));
-                break;
-
-              case 'prompt:updated':
-                // Remote update from peer
-                setRemoteEditorName(msg.senderName || 'Peer');
-                if (remoteEditorTimerRef.current) clearTimeout(remoteEditorTimerRef.current);
-                remoteEditorTimerRef.current = setTimeout(() => setRemoteEditorName(null), 2500);
-
-                setItems((prev) => {
-                  return prev.map((item) =>
-                    item.id === activeId ? { ...item, finalPrompt: msg.prompt } : item
-                  );
-                });
-                break;
-
-              case 'status:updated':
-                setCollaborators((prev) =>
-                  prev.map((u) =>
-                    u.id === msg.userId ? { ...u, status: msg.status || 'idle' } : u
-                  )
-                );
-                break;
-            }
-          } catch (e) {
-            console.error('WS message error', e);
-          }
-        };
-
-        ws.onclose = () => {
-          setIsWsConnected(false);
-          reconnectTimeout = setTimeout(connect, 3000);
-        };
-
-        ws.onerror = () => {
-          ws.close();
-        };
-      } catch {
-        reconnectTimeout = setTimeout(connect, 3000);
-      }
-    }
-
-    connect();
-
-    return () => {
-      clearTimeout(reconnectTimeout);
-      if (ws) ws.close();
-    };
-  }, [roomId, currentUser]);
-
-  // Broadcast local prompt update to room (debounced)
-  const broadcastPromptUpdate = useCallback(
-    (promptText: string) => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'prompt:update',
-            prompt: promptText,
-          })
-        );
-      }
-    },
-    []
-  );
-
-  // Broadcast local status update
-  const broadcastStatusUpdate = (status: 'idle' | 'editing' | 'analyzing' | 'batch') => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'status:update',
-          status,
-        })
-      );
-    }
-  };
 
   // Load saved API store on mount
   useEffect(() => {
@@ -379,9 +167,10 @@ export default function App() {
       let finalPrompt = '';
       let finalNeg: string | null = null;
       let usedApi = false;
+      let apiEngine: string | undefined;
       let apiRoundtripMs = 0;
 
-      if (adv.api) {
+      if (adv.api || activeApiId) {
         try {
           setItems((prev) =>
             prev.map((i) => (i.id === targetItem.id ? { ...i, status: 'api', step: 3 } : i))
@@ -399,6 +188,17 @@ export default function App() {
             reader.readAsDataURL(blob);
           });
 
+          const activeApi = apis.find((a) => a.id === activeApiId && a.enabled);
+          const apiConfig = activeApi
+            ? {
+                provider: activeApi.provider,
+                model: activeApi.model,
+                key: activeApi.key,
+                baseUrl: activeApi.baseUrl,
+                precision: activeApi.precision,
+              }
+            : undefined;
+
           const apiRes = await fetch('/api/gemini/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -406,10 +206,9 @@ export default function App() {
               base64,
               mimeType: blob.type || 'image/jpeg',
               instruction: `Generate an elite AI prompt for image generation in ${opts.pLang}. Target model: ${opts.style}. Detail: exhaustive. Include style, layout, lighting, color palette (${analysisData.palette.map((p) => p.hex).join(', ')}), composition, and professional design aesthetics.`,
+              apiConfig,
             }),
           });
-
-          handleRateLimitHeaders(apiRes);
 
           if (apiRes.ok) {
             const apiData = await apiRes.json();
@@ -417,6 +216,7 @@ export default function App() {
               finalPrompt = apiData.prompt;
               finalNeg = apiData.negative || null;
               usedApi = true;
+              apiEngine = apiData.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
               apiRoundtripMs = apiData.latencyMs || Math.round(performance.now() - tApiStart);
             }
           }
@@ -455,6 +255,7 @@ export default function App() {
         finalPrompt,
         finalNeg,
         viaApi: usedApi,
+        apiEngine,
         status: 'done',
         step: 4,
         history: [finalPrompt],
@@ -521,8 +322,6 @@ export default function App() {
       totalCount: queued.length,
     }));
 
-    broadcastStatusUpdate('batch');
-
     const concurrency = workerConfig.concurrency;
     let index = 0;
     let completed = 0;
@@ -575,7 +374,6 @@ export default function App() {
       isPaused: false,
     }));
 
-    broadcastStatusUpdate('idle');
     showToast(`Batch completed: ${completed} analyzed successfully ✓`, 'ok');
   };
 
@@ -631,15 +429,24 @@ export default function App() {
       historyIndex: history.length - 1,
     };
     setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-    broadcastPromptUpdate(main);
     showToast('Prompt regenerated ✓', 'ok');
   };
 
-  // Enhance prompt via Gemini API
+  // Enhance prompt via Multi-Provider API
   const handleEnhance = async () => {
     if (!activeItem?.finalPrompt) return;
     showToast('Enhancing prompt with AI…', 'ok');
-    broadcastStatusUpdate('editing');
+
+    const activeApi = apis.find((a) => a.id === activeApiId && a.enabled);
+    const apiConfig = activeApi
+      ? {
+          provider: activeApi.provider,
+          model: activeApi.model,
+          key: activeApi.key,
+          baseUrl: activeApi.baseUrl,
+          precision: activeApi.precision,
+        }
+      : undefined;
 
     try {
       const res = await fetch('/api/gemini/enhance', {
@@ -647,30 +454,28 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instruction: `Enhance and polish this AI image prompt to make it deeply evocative, highly detailed, visually compelling, and stylistically pristine: "${activeItem.finalPrompt}"`,
+          apiConfig,
         }),
       });
-
-      handleRateLimitHeaders(res);
 
       if (!res.ok) throw new Error('API request failed');
       const data = await res.json();
       if (data.prompt) {
         const history = [...(activeItem.history || []), data.prompt];
+        const engineLabel = data.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
         const updated: BatchItem = {
           ...activeItem,
           finalPrompt: data.prompt,
           history,
           historyIndex: history.length - 1,
           viaApi: true,
+          apiEngine: engineLabel,
         };
         setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-        broadcastPromptUpdate(data.prompt);
-        showToast('Prompt enhanced with AI ✓', 'ok');
+        showToast(`Prompt enhanced with ${engineLabel} ✓`, 'ok');
       }
     } catch {
       showToast('Enhancement failed. Check your API settings.', 'err');
-    } finally {
-      broadcastStatusUpdate('idle');
     }
   };
 
@@ -684,7 +489,6 @@ export default function App() {
       finalPrompt: activeItem.history[newIdx],
     };
     setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-    broadcastPromptUpdate(activeItem.history[newIdx]);
   };
 
   // Redo prompt change
@@ -697,7 +501,6 @@ export default function App() {
       finalPrompt: activeItem.history[newIdx],
     };
     setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-    broadcastPromptUpdate(activeItem.history[newIdx]);
   };
 
   // Update prompt manually in textarea
@@ -708,7 +511,6 @@ export default function App() {
       finalPrompt: newPrompt,
     };
     setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-    broadcastPromptUpdate(newPrompt);
   };
 
   // Export batch
@@ -748,24 +550,18 @@ export default function App() {
         }}
         apiCount={apis.length}
         hasActiveApi={!!activeApiId || adv.api}
+        activeApiLabel={
+          activeApiId
+            ? apis.find((a) => a.id === activeApiId)?.name || 'Custom API'
+            : 'Gemini 3.8'
+        }
         latestLatency={latestLatency}
-        rateLimitState={rateLimitState}
         onRefreshPing={measurePing}
         onOpenAdv={() => setModalState((prev) => ({ ...prev, adv: true }))}
         onOpenPerf={() => setModalState((prev) => ({ ...prev, perf: true }))}
         onOpenContact={() => setModalState((prev) => ({ ...prev, contact: true }))}
         onOpenAbout={() => setModalState((prev) => ({ ...prev, about: true }))}
         onOpenApi={() => setModalState((prev) => ({ ...prev, api: true }))}
-      />
-
-      {/* Real-time Collaboration Status Bar */}
-      <CollaborationBar
-        roomId={roomId}
-        isConnected={isWsConnected}
-        currentUser={currentUser}
-        collaborators={collaborators}
-        onRoomChange={(newRoom) => setRoomId(newRoom)}
-        onToast={showToast}
       />
 
       {/* 1K to 12K Quality Deck */}
@@ -810,13 +606,12 @@ export default function App() {
           onToast={showToast}
         />
 
-        {/* Panel 2: Prompt Studio with Integrated Suggestions */}
+        {/* Panel 2: Prompt Studio */}
         <StudioPanel
           item={activeItem}
           opts={opts}
           adv={adv}
           lang={lang}
-          remoteEditorName={remoteEditorName}
           onOptsChange={(newOpts) => {
             setOpts((prev) => ({ ...prev, ...newOpts }));
             if (activeItem?.status === 'done') {
@@ -892,7 +687,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="max-w-[1480px] mx-auto px-7 py-8 mt-6 flex items-center justify-between gap-4 text-xs text-[#54736c] flex-wrap border-t border-[#1a3a34]">
-        <span>Promptlens-api © 2026 · Real-Time Collaboration · High-Throughput Batch Processing</span>
+        <span>Promptlens-api © 2026 · High-Throughput Batch Processing & AI Vision</span>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setModalState((prev) => ({ ...prev, about: true }))}
@@ -908,7 +703,7 @@ export default function App() {
             Contact
           </button>
           <span>·</span>
-          <span className="font-mono text-[10px] text-[#37d6c0]">v3.2 Real-Time</span>
+          <span className="font-mono text-[10px] text-[#37d6c0]">v3.2 Studio</span>
         </div>
       </footer>
 
@@ -962,15 +757,28 @@ export default function App() {
         }}
         onTestApi={async (api) => {
           try {
-            if (api.provider === 'gemini') {
-              const r = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${api.key}`,
-              );
-              return r.ok;
-            }
-            return true;
-          } catch {
-            return false;
+            const r = await fetch('/api/api-test', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                provider: api.provider,
+                model: api.model,
+                key: api.key,
+                baseUrl: api.baseUrl,
+              }),
+            });
+            const data = await r.json();
+            return {
+              ok: !!data.ok,
+              latencyMs: data.latencyMs,
+              error: data.error,
+              message: data.message,
+            };
+          } catch (e: any) {
+            return {
+              ok: false,
+              error: e.message || 'Connection test failed',
+            };
           }
         }}
         onToast={showToast}

@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, ShieldCheck, AlertTriangle, Zap, Server, RefreshCw } from 'lucide-react';
-import { LatencyMetrics, RateLimitState } from '../types';
+import React, { useState } from 'react';
+import { Activity, Zap, RefreshCw } from 'lucide-react';
+import { LatencyMetrics } from '../types';
 
 interface LatencyRateLimiterBarProps {
   latestLatency: LatencyMetrics | null;
-  rateLimitState: RateLimitState;
   onRefreshPing: () => void;
 }
 
 export const LatencyRateLimiterBar: React.FC<LatencyRateLimiterBarProps> = ({
   latestLatency,
-  rateLimitState,
   onRefreshPing,
 }) => {
   const [showDetails, setShowDetails] = useState(false);
@@ -19,11 +17,6 @@ export const LatencyRateLimiterBar: React.FC<LatencyRateLimiterBarProps> = ({
   const totalMs = latestLatency?.totalMs || 0;
   const pingColor =
     totalMs < 150 ? 'text-[#3ddc84]' : totalMs < 500 ? 'text-[#ffb454]' : 'text-[#ff6b7a]';
-
-  // Rate limit health color
-  const quotaPct = Math.round((rateLimitState.remaining / rateLimitState.limit) * 100);
-  const quotaColor =
-    quotaPct > 40 ? 'text-[#37d6c0]' : quotaPct > 15 ? 'text-[#ffb454]' : 'text-[#ff6b7a]';
 
   return (
     <div className="relative">
@@ -45,30 +38,6 @@ export const LatencyRateLimiterBar: React.FC<LatencyRateLimiterBarProps> = ({
             </span>
           ) : null}
         </button>
-
-        {/* Rate Limiter Status Badge */}
-        <div
-          className={`inline-flex items-center gap-1.5 bg-[#0e1d1a] border px-3 py-1.5 rounded-xl ${
-            rateLimitState.isLimited
-              ? 'border-[#ff6b7a] bg-[#ff6b7a15] text-[#ff6b7a]'
-              : 'border-[#22403a] text-[#8faea5]'
-          }`}
-        >
-          {rateLimitState.isLimited ? (
-            <AlertTriangle className="w-3.5 h-3.5 text-[#ff6b7a] animate-pulse" />
-          ) : (
-            <ShieldCheck className="w-3.5 h-3.5 text-[#37d6c0]" />
-          )}
-          <span>Rate Limit:</span>
-          <span className={`font-mono font-bold ${quotaColor}`}>
-            {rateLimitState.remaining} / {rateLimitState.limit}
-          </span>
-          {rateLimitState.isLimited && (
-            <span className="font-mono text-[10px] text-[#ff6b7a] animate-pulse">
-              (Cooldown {rateLimitState.cooldownSec}s)
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Latency Breakdown Details Popover */}
