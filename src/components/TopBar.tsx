@@ -1,15 +1,18 @@
 import React from 'react';
-import { Sliders, Activity, Mail, Info, KeyRound } from 'lucide-react';
+import { Sliders, Activity, Mail, Info } from 'lucide-react';
 import { I18N } from '../utils/i18n';
 import { LatencyRateLimiterBar } from './LatencyRateLimiterBar';
-import { LatencyMetrics } from '../types';
+import { ApiQuickSwitcher } from './ApiQuickSwitcher';
+import { ApiInterface, LatencyMetrics, SessionTokenStats } from '../types';
 
 interface TopBarProps {
   lang: 'en' | 'ar' | 'fr' | 'es';
   onLangChange: (lang: 'en' | 'ar' | 'fr' | 'es') => void;
-  apiCount: number;
-  hasActiveApi: boolean;
-  activeApiLabel?: string;
+  apis: ApiInterface[];
+  activeApiId: string | null;
+  onSelectApi: (id: string | null) => void;
+  tokenStats: SessionTokenStats;
+  onResetTokens: () => void;
   latestLatency: LatencyMetrics | null;
   onRefreshPing: () => void;
   onOpenAdv: () => void;
@@ -17,14 +20,17 @@ interface TopBarProps {
   onOpenContact: () => void;
   onOpenAbout: () => void;
   onOpenApi: () => void;
+  isProcessing?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   lang,
   onLangChange,
-  apiCount,
-  hasActiveApi,
-  activeApiLabel,
+  apis,
+  activeApiId,
+  onSelectApi,
+  tokenStats,
+  onResetTokens,
   latestLatency,
   onRefreshPing,
   onOpenAdv,
@@ -32,6 +38,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenContact,
   onOpenAbout,
   onOpenApi,
+  isProcessing,
 }) => {
   const t = I18N[lang].s;
 
@@ -86,6 +93,17 @@ export const TopBar: React.FC<TopBarProps> = ({
           onRefreshPing={onRefreshPing}
         />
 
+        {/* Direct API Switcher & Accurate Live Token Counter */}
+        <ApiQuickSwitcher
+          apis={apis}
+          activeApiId={activeApiId}
+          onSelectApi={onSelectApi}
+          onOpenApiModal={onOpenApi}
+          tokenStats={tokenStats}
+          onResetTokens={onResetTokens}
+          isProcessing={isProcessing}
+        />
+
         <button
           onClick={onOpenAdv}
           className="inline-flex items-center gap-2 bg-[#0f1e1c] border border-[#23423c] hover:border-[#ffb454] text-[#cfe6df] hover:text-[#ffd9a8] rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer transition-all duration-300 hover:-translate-y-0.5 shadow-sm"
@@ -118,25 +136,6 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <Info className="w-3.5 h-3.5 text-[#ffb454]" />
           <span>{t.aboutBtn}</span>
-        </button>
-
-        <button
-          onClick={onOpenApi}
-          className="inline-flex items-center gap-2 bg-[#0f1e1c] border border-[#23423c] hover:border-[#37d6c0] text-[#cfe6df] rounded-xl px-3.5 py-2 text-xs font-mono font-bold tracking-wider cursor-pointer transition-all duration-300 hover:-translate-y-0.5 shadow-sm"
-          title={`Active AI Vision Engine: ${activeApiLabel || 'Built-in Gemini 3.8'}`}
-        >
-          <KeyRound className="w-3.5 h-3.5 text-[#37d6c0]" />
-          <span>API</span>
-          <span className="text-[10px] text-[#37d6c0] bg-[#0e2e28] px-2 py-0.5 rounded-md max-w-[120px] truncate border border-[#22403a]">
-            {activeApiLabel || 'Gemini 3.8'}
-          </span>
-          <span
-            className={`w-2 h-2 rounded-full transition-all duration-300 ${
-              hasActiveApi
-                ? 'bg-[#3ddc84] shadow-[0_0_10px_#3ddc84] animate-pulse'
-                : 'bg-[#3a5a54]'
-            }`}
-          />
         </button>
 
         <div className="flex bg-[#0f1e1c] border border-[#23423c] rounded-xl p-1 gap-1">

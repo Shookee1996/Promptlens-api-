@@ -88,6 +88,25 @@ export interface ApiInterface {
   _encrypted?: boolean;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  speedTps?: number;
+  engine?: string;
+  durationMs?: number;
+  timestamp?: number;
+}
+
+export interface SessionTokenStats {
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  callCount: number;
+  lastCallTokens?: TokenUsage;
+  tokensByEngine?: Record<string, number>;
+}
+
 export interface LatencyMetrics {
   pixelDecodeMs: number;
   colorExtractionMs: number;
@@ -116,6 +135,7 @@ export interface BatchItem {
   struct?: any;
   viaApi?: boolean;
   apiEngine?: string;
+  tokens?: TokenUsage;
   history?: string[];
   historyIndex?: number;
   latency?: LatencyMetrics;

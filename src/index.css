@@ -511,3 +511,137 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px -6px #37d6c033;
 }
+
+/* Modal and Hub Micro-Interactions & Animations */
+@keyframes modalPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideDownSmooth {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes enginePulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(61, 220, 132, 0.15), inset 0 0 10px rgba(61, 220, 132, 0.04);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(61, 220, 132, 0.32), inset 0 0 16px rgba(61, 220, 132, 0.09);
+  }
+}
+
+.animate-modal-pop {
+  animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-overlay {
+  animation: fadeInOverlay 0.2s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slideDownSmooth 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-active-engine {
+  animation: enginePulse 3.5s ease-in-out infinite;
+}
+
+/* Precision Token Counter & Direct API Switcher Animations */
+@keyframes tokenBump {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.18);
+    color: #37d6c0;
+    text-shadow: 0 0 16px rgba(55, 214, 192, 0.6);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes deltaFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.85);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.9);
+  }
+}
+
+@keyframes switchRipple {
+  0% {
+    box-shadow: 0 0 0 0 rgba(61, 220, 132, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(61, 220, 132, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(61, 220, 132, 0);
+  }
+}
+
+@keyframes tokenShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-token-bump {
+  animation: tokenBump 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.animate-delta-float {
+  animation: deltaFloat 2.6s ease-out forwards;
+}
+
+.animate-switch-ripple {
+  animation: switchRipple 0.8s ease-out;
+}
+
+.animate-token-shimmer {
+  background: linear-gradient(90deg, rgba(55, 214, 192, 0.08) 0%, rgba(55, 214, 192, 0.35) 50%, rgba(55, 214, 192, 0.08) 100%);
+  background-size: 200% 100%;
+  animation: tokenShimmer 2s linear infinite;
+}
+

@@ -10,6 +10,7 @@ import {
   Sparkles,
   Link,
   Copy,
+  Edit3,
   Send,
   Download,
   Upload,
@@ -21,8 +22,9 @@ import {
   EyeOff,
   Loader2,
   RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
-import { AdvancedFeatures, ApiInterface, BatchItem } from '../types';
+import { AdvancedFeatures, ApiInterface, BatchItem, SessionTokenStats } from '../types';
 import { I18N } from '../utils/i18n';
 import { OWNER_EMAIL } from '../utils/constants';
 
@@ -46,9 +48,9 @@ const ModalWrapper: React.FC<ModalWrapperProps> = ({
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-[#070f0ecc] backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 bg-[#070f0ecc] backdrop-blur-sm animate-overlay" onClick={onClose} />
       <div
-        className={`relative w-full ${maxWidth} max-h-[90vh] overflow-y-auto bg-gradient-to-b from-[#132522] to-[#0d1a18] border border-[#2a4a44] rounded-2xl p-6 shadow-2xl z-10`}
+        className={`relative w-full ${maxWidth} max-h-[90vh] overflow-y-auto bg-gradient-to-b from-[#132522] to-[#0d1a18] border border-[#2a4a44] rounded-2xl p-6 shadow-2xl z-10 animate-modal-pop`}
       >
         <div className="absolute top-0 inset-x-5 h-[2px] bg-gradient-to-r from-[#ffb454] to-[#37d6c0]" />
         <div className="flex items-start justify-between gap-4 mb-4">
@@ -179,11 +181,32 @@ export const ApiModal: React.FC<{
   activeId: string | null;
   onSetActive: (id: string | null) => void;
   onAddApi: (api: Omit<ApiInterface, 'id'>) => void;
+  onUpdateApi: (id: string, updated: Partial<Omit<ApiInterface, 'id'>>) => void;
   onDeleteApi: (id: string) => void;
+  onDuplicateApi?: (id: string) => void;
+  onToggleApiEnable?: (id: string) => void;
+  tokenStats?: SessionTokenStats;
+  onResetTokens?: () => void;
   onTestApi: (api: Partial<ApiInterface>) => Promise<{ ok: boolean; latencyMs?: number; error?: string; message?: string }>;
   onToast: (msg: string, type?: 'ok' | 'err') => void;
-}> = ({ isOpen, onClose, apis, activeId, onSetActive, onAddApi, onDeleteApi, onTestApi, onToast }) => {
+}> = ({
+  isOpen,
+  onClose,
+  apis,
+  activeId,
+  onSetActive,
+  onAddApi,
+  onUpdateApi,
+  onDeleteApi,
+  onDuplicateApi,
+  onToggleApiEnable,
+  tokenStats,
+  onResetTokens,
+  onTestApi,
+  onToast,
+}) => {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [provider, setProvider] = useState<ApiInterface['provider']>('gemini');
   const [model, setModel] = useState('gemini-3.8-flash');
@@ -227,6 +250,29 @@ export const ApiModal: React.FC<{
       setBaseUrl('https://api.openai.com/v1');
     }
     setFormTestResult(null);
+  };
+
+  const handleStartEdit = (api: ApiInterface) => {
+    setEditingId(api.id);
+    setName(api.name);
+    setProvider(api.provider);
+    setModel(api.model);
+    setKey(api.key);
+    setShowKey(false);
+    setBaseUrl(api.baseUrl || '');
+    setPrecision(api.precision);
+    setFormTestResult(null);
+    setShowForm(true);
+  };
+
+  const handleCancelForm = () => {
+    setEditingId(null);
+    setName('');
+    setKey('');
+    setShowKey(false);
+    setBaseUrl('');
+    setFormTestResult(null);
+    setShowForm(false);
   };
 
   const handleTestInForm = async () => {
@@ -274,22 +320,33 @@ export const ApiModal: React.FC<{
       onToast('API Key is required', 'err');
       return;
     }
-    const finalName = name.trim() || `${provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Claude' : 'Custom'} (${model})`;
-    onAddApi({
-      name: finalName,
-      provider,
-      model,
-      key: key.trim(),
-      baseUrl: baseUrl.trim() || undefined,
-      precision,
-      enabled: true,
-    });
-    setName('');
-    setKey('');
-    setBaseUrl('');
-    setShowForm(false);
-    setFormTestResult(null);
-    onToast('API engine added and activated ✓', 'ok');
+    const defaultLabel = `${provider === 'gemini' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Claude' : 'Custom'} (${model})`;
+    const finalName = name.trim() || defaultLabel;
+
+    if (editingId) {
+      onUpdateApi(editingId, {
+        name: finalName,
+        provider,
+        model,
+        key: key.trim(),
+        baseUrl: baseUrl.trim() || undefined,
+        precision,
+      });
+      onToast(`Engine "${finalName}" updated ✓`, 'ok');
+    } else {
+      onAddApi({
+        name: finalName,
+        provider,
+        model,
+        key: key.trim(),
+        baseUrl: baseUrl.trim() || undefined,
+        precision,
+        enabled: true,
+      });
+      onToast(`Engine "${finalName}" added and activated ✓`, 'ok');
+    }
+
+    handleCancelForm();
   };
 
   const isBuiltInActive = activeId === null;
@@ -298,15 +355,57 @@ export const ApiModal: React.FC<{
     <ModalWrapper isOpen={isOpen} onClose={onClose} kicker="AI ENGINE" title="AI Vision Engine & Multi-API Hub" maxWidth="max-w-2xl">
       <div className="flex flex-col gap-4">
         <p className="text-xs text-[#8faea5]">
-          Manage and switch AI vision engines for automated prompt generation, deep image analysis, and style extraction. All API keys are encrypted at rest with military-grade AES-256-GCM.
+          Manage, customize, and edit AI vision engines for prompt generation, deep image inspection, and style extraction. All API keys are encrypted at rest with AES-256-GCM.
         </p>
+
+        {/* Live Token Telemetry Banner */}
+        {tokenStats && (
+          <div className="bg-[#0e1d1a] border border-[#23423c] rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap shadow-inner">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#37d6c015] border border-[#37d6c033] flex items-center justify-center text-[#37d6c0]">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono text-[#8faea5] uppercase tracking-wider block">
+                  Session Token Telemetry (عداد التوكين الدقيق)
+                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-sm font-bold font-mono text-white">
+                    {tokenStats.totalTokens.toLocaleString()} Total Tokens
+                  </span>
+                  <span className="text-[10px] font-mono text-[#37d6c0] bg-[#122622] px-1.5 py-0.5 rounded border border-[#22403a]">
+                    {tokenStats.totalPromptTokens.toLocaleString()} in / {tokenStats.totalCompletionTokens.toLocaleString()} out
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {tokenStats.lastCallTokens?.speedTps ? (
+                <span className="text-[10px] font-mono text-[#3ddc84] bg-[#0c241e] px-2 py-1 rounded-lg border border-[#22403a]">
+                  {tokenStats.lastCallTokens.speedTps} tok/sec
+                </span>
+              ) : null}
+              {onResetTokens && tokenStats.totalTokens > 0 && (
+                <button
+                  type="button"
+                  onClick={onResetTokens}
+                  className="px-2 py-1 text-[10px] font-semibold text-[#8faea5] hover:text-[#ff6b7a] bg-[#122622] hover:bg-[#ff6b7a15] rounded-lg border border-[#22403a] hover:border-[#ff6b7a44] transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 1. Built-in Server Engine Card */}
         <div
           onClick={() => onSetActive(null)}
-          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+          className={`p-3.5 rounded-xl border transition-all duration-300 cursor-pointer flex items-center justify-between gap-3 hover:-translate-y-0.5 ${
             isBuiltInActive
-              ? 'border-[#3ddc84] bg-[#3ddc8412] shadow-[0_0_15px_rgba(61,220,132,0.1)]'
+              ? 'border-[#3ddc84] bg-[#3ddc8414] animate-active-engine shadow-md'
               : 'border-[#22403a] bg-[#0c1816] hover:border-[#37d6c0]'
           }`}
         >
@@ -324,8 +423,8 @@ export const ApiModal: React.FC<{
                   SERVER MANAGED
                 </span>
                 {isBuiltInActive && (
-                  <span className="text-[10px] font-mono text-[#3ddc84] flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#3ddc84] animate-pulse" />
+                  <span className="text-[10px] font-mono text-[#3ddc84] flex items-center gap-1 font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#3ddc84] animate-ping" />
                     ACTIVE
                   </span>
                 )}
@@ -337,10 +436,26 @@ export const ApiModal: React.FC<{
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-mono text-[#3ddc84] bg-[#08221d] px-2.5 py-1 rounded-lg border border-[#22403a] flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" />
-              <span>Ready</span>
-            </span>
+            {isBuiltInActive ? (
+              <span className="text-xs font-mono text-[#3ddc84] bg-[#08221d] px-2.5 py-1 rounded-lg border border-[#22403a] flex items-center gap-1.5 font-bold">
+                <Check className="w-3.5 h-3.5 text-[#3ddc84]" />
+                <span>Active Engine</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSetActive(null);
+                  onToast('Switched to Built-in Google Gemini 3.8 Flash ✓', 'ok');
+                }}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#3ddc8415] hover:bg-[#3ddc8430] text-[#3ddc84] border border-[#3ddc8433] hover:border-[#3ddc84] flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105"
+                title="الانتقال المباشر إلى محرك Gemini المدمج"
+              >
+                <Zap className="w-3 h-3 text-[#3ddc84]" />
+                <span>انتقال مباشر ⚡</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -349,27 +464,30 @@ export const ApiModal: React.FC<{
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[#8faea5] uppercase tracking-wider">Custom Vision Engines ({apis.length})</span>
             {apis.length > 0 && (
-              <span className="text-[11px] text-[#54736c]">Click an engine to select as active</span>
+              <span className="text-[11px] text-[#54736c]">Click card to activate · Edit or test anytime</span>
             )}
           </div>
 
           {apis.length === 0 ? (
             <div className="text-center p-4 border border-dashed border-[#22403a] rounded-xl text-xs text-[#54736c]">
-              No custom API endpoints added. The built-in Google Gemini 3.8 Flash engine is active.
+              No custom API endpoints added. The built-in Google Gemini 3.8 Flash engine is currently active.
             </div>
           ) : (
             apis.map((api) => {
               const isActive = api.id === activeId;
               const test = testResults[api.id];
               const isTesting = testingId === api.id;
+              const isEditingThis = editingId === api.id;
 
               return (
                 <div
                   key={api.id}
                   onClick={() => onSetActive(api.id)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                    isActive
-                      ? 'border-[#3ddc84] bg-[#3ddc840f] shadow-[0_0_12px_rgba(61,220,132,0.1)]'
+                  className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 hover:-translate-y-0.5 ${
+                    isEditingThis
+                      ? 'border-[#ffb454] bg-[#ffb4540d] shadow-[0_0_12px_rgba(255,180,84,0.15)] ring-1 ring-[#ffb45455]'
+                      : isActive
+                      ? 'border-[#3ddc84] bg-[#3ddc840f] animate-active-engine shadow-md'
                       : 'border-[#22403a] bg-[#0e1d1a] hover:border-[#37d6c0]'
                   }`}
                 >
@@ -396,28 +514,55 @@ export const ApiModal: React.FC<{
                         >
                           {api.provider}
                         </span>
-                        <span className="text-[10px] font-mono text-[#8faea5] bg-[#0c1816] px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] font-mono text-[#8faea5] bg-[#0c1816] px-1.5 py-0.5 rounded border border-[#1a3832]">
                           {api.model}
                         </span>
                         {isActive && (
-                          <span className="text-[10px] font-mono text-[#3ddc84] flex items-center gap-1">
+                          <span className="text-[10px] font-mono text-[#3ddc84] flex items-center gap-1 font-bold">
                             <span className="w-1.5 h-1.5 rounded-full bg-[#3ddc84] animate-pulse" />
                             ACTIVE
+                          </span>
+                        )}
+                        {isEditingThis && (
+                          <span className="text-[10px] font-mono text-[#ffb454] px-1.5 py-0.5 rounded bg-[#ffb45415] border border-[#ffb45433]">
+                            EDITING
                           </span>
                         )}
                       </div>
                       <span className="text-[10px] font-mono text-[#54736c] block mt-0.5">
                         Key: {api.key ? `••••••••${api.key.slice(-4)}` : 'Server default'} · Precision: {api.precision}
+                        {api.baseUrl ? ` · ${api.baseUrl}` : ''}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    {/* Direct Switch Button if not active */}
+                    {!isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetActive(api.id);
+                          onToast(`Switched to ${api.name} (${api.model}) ✓`, 'ok');
+                        }}
+                        title="انتقال مباشر إلى هذا المحرك (Direct Switch)"
+                        className="px-2 py-1 rounded-lg text-xs font-semibold bg-[#3ddc8415] hover:bg-[#3ddc8430] text-[#3ddc84] border border-[#3ddc8433] hover:border-[#3ddc84] flex items-center gap-1 transition-all cursor-pointer shadow-sm hover:scale-105"
+                      >
+                        <Zap className="w-3 h-3 text-[#3ddc84]" />
+                        <span className="hidden sm:inline">انتقال ⚡</span>
+                      </button>
+                    ) : (
+                      <span className="px-2 py-1 rounded-lg text-[11px] font-mono font-bold bg-[#3ddc8422] text-[#3ddc84] border border-[#3ddc8444] flex items-center gap-1">
+                        <Check className="w-3 h-3 text-[#3ddc84]" />
+                        <span className="hidden sm:inline">Active</span>
+                      </span>
+                    )}
+
                     {test && (
                       <span
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-all ${
                           test.ok
-                            ? 'bg-[#3ddc8418] text-[#3ddc84] border-[#3ddc8444]'
+                            ? 'bg-[#3ddc8418] text-[#3ddc84] border-[#3ddc8444] animate-[successPop_0.3s_ease-out]'
                             : 'bg-[#ff6b7a18] text-[#ff6b7a] border-[#ff6b7a44]'
                         }`}
                       >
@@ -425,19 +570,47 @@ export const ApiModal: React.FC<{
                       </span>
                     )}
 
+                    {/* Test Button */}
                     <button
                       onClick={() => handleTestExisting(api)}
                       disabled={isTesting}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#122622] hover:bg-[#1a3832] text-[#37d6c0] border border-[#22403a] hover:border-[#37d6c0] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Test Connection"
+                      className="px-2 py-1 rounded-lg text-xs font-semibold bg-[#122622] hover:bg-[#1a3832] text-[#37d6c0] border border-[#22403a] hover:border-[#37d6c0] flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      <span>{isTesting ? 'Testing…' : 'Test'}</span>
+                      <span className="hidden sm:inline">{isTesting ? 'Testing…' : 'Test'}</span>
                     </button>
 
+                    {/* Edit Button */}
+                    <button
+                      onClick={() => handleStartEdit(api)}
+                      title="Edit this API configuration"
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold border flex items-center gap-1 transition-all cursor-pointer ${
+                        isEditingThis
+                          ? 'bg-[#ffb45422] text-[#ffb454] border-[#ffb45466]'
+                          : 'bg-[#142320] hover:bg-[#203a35] text-[#ffb454] border-[#22403a] hover:border-[#ffb454]'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span className="hidden sm:inline">Edit</span>
+                    </button>
+
+                    {/* Duplicate Button */}
+                    {onDuplicateApi && (
+                      <button
+                        onClick={() => onDuplicateApi(api.id)}
+                        title="Duplicate configuration"
+                        className="w-7 h-7 rounded-lg text-[#8faea5] hover:text-[#37d6c0] hover:bg-[#37d6c015] flex items-center justify-center transition-all cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    )}
+
+                    {/* Delete Button */}
                     <button
                       onClick={() => onDeleteApi(api.id)}
                       title="Delete API"
-                      className="w-7 h-7 rounded-lg text-[#8faea5] hover:text-[#ff6b7a] hover:bg-[#ff6b7a15] flex items-center justify-center transition-colors cursor-pointer"
+                      className="w-7 h-7 rounded-lg text-[#8faea5] hover:text-[#ff6b7a] hover:bg-[#ff6b7a15] flex items-center justify-center transition-all cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -448,28 +621,49 @@ export const ApiModal: React.FC<{
           )}
         </div>
 
-        {/* 3. Add Custom API Form */}
+        {/* 3. Add / Edit API Form Drawer */}
         {!showForm ? (
           <button
-            onClick={() => setShowForm(true)}
-            className="btn-amber w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md"
+            onClick={() => {
+              setEditingId(null);
+              setName('');
+              setKey('');
+              setBaseUrl('');
+              setFormTestResult(null);
+              setShowForm(true);
+            }}
+            className="btn-amber w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
           >
             <Plus className="w-4 h-4" />
             <span>Connect New API Engine (OpenAI, Claude, Custom)</span>
           </button>
         ) : (
-          <div className="bg-[#0a1614] border border-[#2a4a44] rounded-xl p-4 flex flex-col gap-3.5 animate-fadeIn">
+          <div className="bg-[#0a1614] border border-[#2a4a44] rounded-xl p-4 flex flex-col gap-3.5 animate-slide-down shadow-xl relative overflow-hidden">
+            {editingId && (
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-[#ffb454] to-[#ff9a3d]" />
+            )}
+
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-[#ffb454]" />
-                <span>Configure AI Engine</span>
-              </span>
+              <div className="flex items-center gap-2">
+                {editingId ? (
+                  <div className="flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-[#ffb454]" />
+                    <span className="text-xs font-bold text-white">Edit AI Engine</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#ffb45422] text-[#ffb454] border border-[#ffb45444]">
+                      EDITING
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-[#37d6c0]" />
+                    <span className="text-xs font-bold text-white">Connect New AI Engine</span>
+                  </div>
+                )}
+              </div>
+
               <button
-                onClick={() => {
-                  setShowForm(false);
-                  setFormTestResult(null);
-                }}
-                className="text-xs text-[#8faea5] hover:text-white cursor-pointer"
+                onClick={handleCancelForm}
+                className="text-xs text-[#8faea5] hover:text-white cursor-pointer px-2 py-1 rounded hover:bg-[#142623] transition-colors"
               >
                 Cancel
               </button>
@@ -486,7 +680,7 @@ export const ApiModal: React.FC<{
                     onClick={() => handleProviderChange(p)}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer text-center uppercase tracking-wide border ${
                       provider === p
-                        ? 'bg-[#37d6c0] text-[#06231e] font-bold border-[#37d6c0]'
+                        ? 'bg-[#37d6c0] text-[#06231e] font-bold border-[#37d6c0] shadow-sm'
                         : 'bg-[#0e1d1a] border-[#22403a] text-[#8faea5] hover:border-[#37d6c0]'
                     }`}
                   >
@@ -505,7 +699,7 @@ export const ApiModal: React.FC<{
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={`${provider.toUpperCase()} Engine`}
-                  className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#37d6c0]"
+                  className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#37d6c0] transition-colors"
                 />
               </div>
 
@@ -515,7 +709,7 @@ export const ApiModal: React.FC<{
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0]"
+                    className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0] transition-colors"
                   >
                     {modelPresets[provider]?.map((preset) => (
                       <option key={preset.value} value={preset.value}>
@@ -541,7 +735,7 @@ export const ApiModal: React.FC<{
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
                     placeholder="https://api.openai.com/v1"
-                    className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg pl-8 pr-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0]"
+                    className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg pl-8 pr-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0] transition-colors"
                   />
                 </div>
               </div>
@@ -556,10 +750,10 @@ export const ApiModal: React.FC<{
                 <button
                   type="button"
                   onClick={() => setShowKey(!showKey)}
-                  className="text-[10px] text-[#37d6c0] flex items-center gap-1 cursor-pointer"
+                  className="text-[10px] text-[#37d6c0] hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                  <span>{showKey ? 'Hide' : 'Show'}</span>
+                  <span>{showKey ? 'Hide Key' : 'Show Key'}</span>
                 </button>
               </div>
               <div className="relative">
@@ -572,7 +766,7 @@ export const ApiModal: React.FC<{
                     setFormTestResult(null);
                   }}
                   placeholder={provider === 'gemini' ? 'AIzaSy… (or leave blank)' : provider === 'openai' ? 'sk-proj-…' : 'sk-ant-…'}
-                  className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg pl-8 pr-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0]"
+                  className="w-full bg-[#0e1d1a] border border-[#22403a] rounded-lg pl-8 pr-2.5 py-1.5 text-xs font-mono text-white outline-none focus:border-[#37d6c0] transition-colors"
                 />
               </div>
             </div>
@@ -586,10 +780,10 @@ export const ApiModal: React.FC<{
                     key={p}
                     type="button"
                     onClick={() => setPrecision(p)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer uppercase border ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer uppercase border transition-all ${
                       precision === p
                         ? 'bg-[#37d6c0] text-[#06231e] font-bold border-[#37d6c0]'
-                        : 'bg-[#0e1d1a] border-[#22403a] text-[#8faea5]'
+                        : 'bg-[#0e1d1a] border-[#22403a] text-[#8faea5] hover:border-[#37d6c0]'
                     }`}
                   >
                     {p === 'std' ? 'Standard' : p === 'high' ? 'High-Res' : 'Maximum'}
@@ -600,9 +794,9 @@ export const ApiModal: React.FC<{
               {/* Form test result indicator */}
               {formTestResult && (
                 <span
-                  className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-all ${
                     formTestResult.ok
-                      ? 'bg-[#3ddc8418] text-[#3ddc84] border-[#3ddc8444]'
+                      ? 'bg-[#3ddc8418] text-[#3ddc84] border-[#3ddc8444] animate-[successPop_0.3s_ease-out]'
                       : 'bg-[#ff6b7a18] text-[#ff6b7a] border-[#ff6b7a44]'
                   }`}
                 >
@@ -617,7 +811,7 @@ export const ApiModal: React.FC<{
                 type="button"
                 onClick={handleTestInForm}
                 disabled={formTesting}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#122622] hover:bg-[#1a3832] text-[#37d6c0] border border-[#22403a] hover:border-[#37d6c0] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#122622] hover:bg-[#1a3832] text-[#37d6c0] border border-[#22403a] hover:border-[#37d6c0] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
               >
                 {formTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
                 <span>{formTesting ? 'Testing…' : 'Test Connection'}</span>
@@ -626,9 +820,10 @@ export const ApiModal: React.FC<{
               <button
                 type="button"
                 onClick={handleSave}
-                className="btn-amber px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer shadow-md"
+                className="btn-amber px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-1.5"
               >
-                Save & Activate
+                {editingId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                <span>{editingId ? 'Save Changes' : 'Save & Activate'}</span>
               </button>
             </div>
           </div>

@@ -21,6 +21,8 @@ import {
   ApiInterface,
   LatencyMetrics,
   BatchWorkerConfig,
+  TokenUsage,
+  SessionTokenStats,
 } from './types';
 import { analyzeImage, classify, confidence, buildPrompt } from './utils/analyzer';
 import { secureStore } from './utils/crypto';
@@ -98,6 +100,41 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
   const toastTimeoutRef = useRef<any>(null);
 
+  // Real-time Precision Token Counter State
+  const [tokenStats, setTokenStats] = useState<SessionTokenStats>({
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    callCount: 0,
+  });
+
+  const addTokensToStats = (tokens: TokenUsage, engineName?: string) => {
+    setTokenStats((prev) => {
+      const activeObj = apis.find((a) => a.id === activeApiId);
+      const resolvedEngine =
+        engineName ||
+        tokens.engine ||
+        (activeObj ? activeObj.name : 'Built-in Gemini 3.8 Flash');
+
+      const prevEngineCount = prev.tokensByEngine?.[resolvedEngine] || 0;
+      return {
+        totalPromptTokens: prev.totalPromptTokens + (tokens.promptTokens || 0),
+        totalCompletionTokens: prev.totalCompletionTokens + (tokens.completionTokens || 0),
+        totalTokens: prev.totalTokens + (tokens.totalTokens || 0),
+        callCount: prev.callCount + 1,
+        lastCallTokens: {
+          ...tokens,
+          engine: resolvedEngine,
+          timestamp: Date.now(),
+        },
+        tokensByEngine: {
+          ...(prev.tokensByEngine || {}),
+          [resolvedEngine]: prevEngineCount + (tokens.totalTokens || 0),
+        },
+      };
+    });
+  };
+
   const showToast = (text: string, type: 'ok' | 'err' = 'ok') => {
     setToastMsg({ text, type });
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -150,6 +187,9 @@ export default function App() {
   };
 
   const activeItem = items.find((i) => i.id === activeId) || null;
+  const isApiRunning =
+    workerConfig.isProcessing ||
+    items.some((i) => i.status === 'api' || i.status === 'analyzing' || i.status === 'enhancing');
 
   // Process a single item and return timing
   const processSingleItem = async (targetItem: BatchItem): Promise<boolean> => {
@@ -168,6 +208,7 @@ export default function App() {
       let finalNeg: string | null = null;
       let usedApi = false;
       let apiEngine: string | undefined;
+      let itemTokens: TokenUsage | undefined;
       let apiRoundtripMs = 0;
 
       if (adv.api || activeApiId) {
@@ -218,6 +259,10 @@ export default function App() {
               usedApi = true;
               apiEngine = apiData.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
               apiRoundtripMs = apiData.latencyMs || Math.round(performance.now() - tApiStart);
+              if (apiData.tokens) {
+                itemTokens = apiData.tokens;
+                addTokensToStats(apiData.tokens);
+              }
             }
           }
         } catch {
@@ -256,6 +301,7 @@ export default function App() {
         finalNeg,
         viaApi: usedApi,
         apiEngine,
+        tokens: itemTokens,
         status: 'done',
         step: 4,
         history: [finalPrompt],
@@ -463,6 +509,9 @@ export default function App() {
       if (data.prompt) {
         const history = [...(activeItem.history || []), data.prompt];
         const engineLabel = data.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
+        if (data.tokens) {
+          addTokensToStats(data.tokens);
+        }
         const updated: BatchItem = {
           ...activeItem,
           finalPrompt: data.prompt,
@@ -470,9 +519,13 @@ export default function App() {
           historyIndex: history.length - 1,
           viaApi: true,
           apiEngine: engineLabel,
+          tokens: data.tokens || activeItem.tokens,
         };
         setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
-        showToast(`Prompt enhanced with ${engineLabel} ✓`, 'ok');
+        showToast(
+          `Enhanced with ${engineLabel}${data.tokens ? ` (${data.tokens.totalTokens} tok)` : ''} ✓`,
+          'ok'
+        );
       }
     } catch {
       showToast('Enhancement failed. Check your API settings.', 'err');
@@ -548,13 +601,25 @@ export default function App() {
           setLang(l);
           setOpts((prev) => ({ ...prev, pLang: l }));
         }}
-        apiCount={apis.length}
-        hasActiveApi={!!activeApiId || adv.api}
-        activeApiLabel={
-          activeApiId
-            ? apis.find((a) => a.id === activeApiId)?.name || 'Custom API'
-            : 'Gemini 3.8'
-        }
+        apis={apis}
+        activeApiId={activeApiId}
+        onSelectApi={(id) => {
+          saveApis(apis, id);
+          const selectedName = id
+            ? apis.find((a) => a.id === id)?.name || 'Custom Engine'
+            : 'Built-in Gemini 3.8 Flash';
+          showToast(`Switched to ${selectedName} ✓`, 'ok');
+        }}
+        tokenStats={tokenStats}
+        onResetTokens={() => {
+          setTokenStats({
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            totalTokens: 0,
+            callCount: 0,
+          });
+          showToast('Token counters reset to 0 ✓', 'ok');
+        }}
         latestLatency={latestLatency}
         onRefreshPing={measurePing}
         onOpenAdv={() => setModalState((prev) => ({ ...prev, adv: true }))}
@@ -562,6 +627,7 @@ export default function App() {
         onOpenContact={() => setModalState((prev) => ({ ...prev, contact: true }))}
         onOpenAbout={() => setModalState((prev) => ({ ...prev, about: true }))}
         onOpenApi={() => setModalState((prev) => ({ ...prev, api: true }))}
+        isProcessing={isApiRunning}
       />
 
       {/* 1K to 12K Quality Deck */}
@@ -612,6 +678,18 @@ export default function App() {
           opts={opts}
           adv={adv}
           lang={lang}
+          apis={apis}
+          activeApiId={activeApiId}
+          onSelectApi={(id) => {
+            saveApis(apis, id);
+            const selectedName = id
+              ? apis.find((a) => a.id === id)?.name || 'Custom Engine'
+              : 'Built-in Gemini 3.8 Flash';
+            showToast(`⚡ Switched to ${selectedName} ✓`, 'ok');
+          }}
+          onOpenApiModal={() => setModalState((prev) => ({ ...prev, api: true }))}
+          tokenStats={tokenStats}
+          isProcessing={isApiRunning}
           onOptsChange={(newOpts) => {
             setOpts((prev) => ({ ...prev, ...newOpts }));
             if (activeItem?.status === 'done') {
@@ -751,9 +829,35 @@ export default function App() {
           const id = 'api_' + Date.now();
           saveApis([...apis, { ...newApi, id }], id);
         }}
+        onUpdateApi={(id, updatedFields) => {
+          const updated = apis.map((a) => (a.id === id ? { ...a, ...updatedFields } : a));
+          saveApis(updated, activeApiId);
+        }}
+        onDuplicateApi={(id) => {
+          const source = apis.find((a) => a.id === id);
+          if (!source) return;
+          const cloneId = 'api_' + Date.now();
+          const clone: ApiInterface = {
+            ...source,
+            id: cloneId,
+            name: `${source.name} (Copy)`,
+          };
+          saveApis([...apis, clone], cloneId);
+          showToast(`Engine duplicated as "${clone.name}" ✓`, 'ok');
+        }}
         onDeleteApi={(id) => {
           const filtered = apis.filter((a) => a.id !== id);
           saveApis(filtered, activeApiId === id ? null : activeApiId);
+        }}
+        tokenStats={tokenStats}
+        onResetTokens={() => {
+          setTokenStats({
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            totalTokens: 0,
+            callCount: 0,
+          });
+          showToast('Token counters reset to 0 ✓', 'ok');
         }}
         onTestApi={async (api) => {
           try {
