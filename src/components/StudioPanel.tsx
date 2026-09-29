@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Sparkles,
   Share2,
@@ -11,9 +11,25 @@ import {
   Columns2,
   Rocket,
   Zap,
+  Cpu,
+  Code,
+  Wrench,
+  CheckCircle2,
+  AlertTriangle,
+  Wand2,
+  Sliders,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
-import { BatchItem, AppOptions, AdvancedFeatures, ApiInterface, SessionTokenStats } from '../types';
+import {
+  BatchItem,
+  AppOptions,
+  AdvancedFeatures,
+  ApiInterface,
+  SessionTokenStats,
+} from '../types';
 import { I18N } from '../utils/i18n';
+import { optimizePromptCode, lintPromptSyntax } from '../utils/analyzer';
 
 interface StudioPanelProps {
   item: BatchItem | null;
@@ -24,6 +40,7 @@ interface StudioPanelProps {
   activeApiId?: string | null;
   onSelectApi?: (id: string | null) => void;
   onOpenApiModal?: () => void;
+  onAdvToggle?: (key: keyof AdvancedFeatures, value?: any) => void;
   tokenStats?: SessionTokenStats;
   isProcessing?: boolean;
   onOptsChange: (newOpts: Partial<AppOptions>) => void;
@@ -51,6 +68,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   activeApiId = null,
   onSelectApi,
   onOpenApiModal,
+  onAdvToggle,
   tokenStats,
   isProcessing = false,
   onOptsChange,
@@ -73,9 +91,19 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   const negText = item?.finalNeg || '';
   const isJson = opts.format === 'json';
 
+  const [showEngineMenu, setShowEngineMenu] = useState(false);
+  const [showCodeOptimizerMenu, setShowCodeOptimizerMenu] = useState(false);
+
   const wordsCount = promptText.trim() ? promptText.trim().split(/\s+/).length : 0;
   const charsCount = promptText.length;
   const tokensEst = Math.ceil(charsCount / 4);
+
+  const localEngineMode = adv.localEngineMode || 'deep';
+
+  // Live Prompt Syntax Linting
+  const syntaxReport = useMemo(() => {
+    return lintPromptSyntax(promptText, opts.style);
+  }, [promptText, opts.style]);
 
   const copyToClipboard = async (text: string, msg: string) => {
     try {
@@ -84,6 +112,34 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
     } catch {
       onToast('Failed to copy', 'err');
     }
+  };
+
+  // Run Local Code & Prompt Optimization Engine
+  const handleLocalCodeOptimize = (customOptions: { addPhotographicSpecs?: boolean; filmStock?: string } = {}) => {
+    if (!promptText.trim()) {
+      onToast('Prompt is empty — analyze an image first', 'err');
+      return;
+    }
+
+    const res = optimizePromptCode(promptText, opts.style, {
+      negativePrompt: negText,
+      isJson,
+      addPhotographicSpecs: customOptions.addPhotographicSpecs ?? true,
+      lensEstimate: item?.a?.m?.lensFocalEstimate,
+      dynamicRangeEV: item?.a?.m?.dynamicRangeEV,
+      colorKelvin: item?.a?.m?.colorKelvin,
+      filmStock: customOptions.filmStock,
+    });
+
+    onPromptChange(res.optimizedPrompt);
+    const fixesCount = res.issuesFixed.length;
+    const tokensInfo = res.tokensSaved > 0 ? ` (${res.tokensSaved} tok saved)` : '';
+    const tagsInfo = res.tagsAdded && res.tagsAdded.length > 0 ? ` · Added ${res.tagsAdded.slice(0, 2).join(', ')}` : '';
+
+    onToast(
+      `⚡ Code Optimized in ${res.executionTimeMs}ms! Score: ${res.syntaxScore}%${tokensInfo}${tagsInfo}`,
+      'ok'
+    );
   };
 
   return (
@@ -292,6 +348,143 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
           )}
         </div>
       )}
+
+      {/* Local Analysis Engine & Code Optimizer Bar */}
+      <div className="flex flex-col gap-2 p-2.5 bg-[#091614] border border-[#1d3d36] rounded-xl shadow-inner">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {/* Engine Mode Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-mono text-[#37d6c0] uppercase tracking-wider flex items-center gap-1 font-bold">
+              <Cpu className="w-3.5 h-3.5 text-[#37d6c0]" />
+              <span>Local Engine:</span>
+            </span>
+
+            {[
+              { id: 'turbo', name: '⚡ Turbo', desc: 'استجابة فائقة للدفعات (~15ms)' },
+              { id: 'deep', name: '🔬 Deep Optical', desc: 'تحليل هرمي عميق والنسبة الذهبية φ' },
+              { id: 'cinematic', name: '🎬 Cinematic RAW', desc: 'نطاق EV وعدسات وإضاءة درامية' },
+              { id: 'design', name: '🎨 Vector / UI', desc: 'هندسة التصميم والتايبوغرافي' },
+            ].map((m) => {
+              const isSelected = localEngineMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    if (onAdvToggle) {
+                      onAdvToggle('localEngineMode', m.id);
+                      onToast(`Local Engine switched to ${m.name} ✓`, 'ok');
+                    }
+                  }}
+                  title={m.desc}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1 transition-all duration-200 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#37d6c022] text-[#37d6c0] border border-[#37d6c088] shadow-[0_0_10px_rgba(55,214,192,0.25)] ring-1 ring-[#37d6c044]'
+                      : 'bg-[#0d1d1a] text-[#8faea5] hover:text-white border border-[#22403a] hover:border-[#37d6c0]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isSelected ? 'bg-[#37d6c0] animate-pulse' : 'bg-[#54736c]'
+                    }`}
+                  />
+                  <span>{m.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Local Code & Prompt Enhancer Button */}
+          <div className="relative flex items-center gap-1.5 ml-auto">
+            <button
+              type="button"
+              onClick={() => handleLocalCodeOptimize({ addPhotographicSpecs: true })}
+              disabled={!promptText.trim()}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#203a35] via-[#1c453e] to-[#2b5950] hover:from-[#2a4e48] hover:to-[#387065] text-[#37d6c0] hover:text-white border border-[#37d6c066] hover:border-[#37d6c0] text-xs font-bold font-mono flex items-center gap-1.5 shadow-md hover:shadow-[0_0_15px_rgba(55,214,192,0.3)] transition-all cursor-pointer disabled:opacity-40 disabled:pointer-events-none active:scale-95"
+              title="تحسين بنية الكود والموجّه محلياً وإصلاح الأقواس والتكرار"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-[#ffb454] animate-spin" style={{ animationDuration: '6s' }} />
+              <span>⚡ تحسين الكود محلياً</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#ffb45422] text-[#ffb454] border border-[#ffb45444]">
+                {syntaxReport.score}%
+              </span>
+            </button>
+
+            {/* Quick Actions Dropdown Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowCodeOptimizerMenu(!showCodeOptimizerMenu)}
+              disabled={!promptText.trim()}
+              className="w-7 h-7 rounded-xl bg-[#0e1d1a] border border-[#22403a] hover:border-[#37d6c0] text-[#8faea5] hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              title="خيارات تحسين الكود المتقدمة"
+            >
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCodeOptimizerMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showCodeOptimizerMenu && (
+              <div
+                className="absolute right-0 top-9 w-64 bg-[#0a1614] border border-[#2a4a44] rounded-xl p-2 shadow-2xl z-30 flex flex-col gap-1 text-xs animate-modal-pop font-mono"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-2 py-1 text-[10px] text-[#8faea5] uppercase tracking-wider font-bold border-b border-[#1b342e]">
+                  خيارات تحسين الكود والموجّه
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLocalCodeOptimize({ addPhotographicSpecs: false });
+                    setShowCodeOptimizerMenu(false);
+                  }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-[#122723] text-[#cfe6df] flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Wrench className="w-3 h-3 text-[#37d6c0]" />
+                  <span>تنظيف الأخطاء والأقواس والتكرار</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLocalCodeOptimize({ addPhotographicSpecs: true, filmStock: 'Kodak Portra 400' });
+                    setShowCodeOptimizerMenu(false);
+                  }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-[#122723] text-[#cfe6df] flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Sparkles className="w-3 h-3 text-[#ffb454]" />
+                  <span>إدراج محاكاة Kodak Portra 400</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLocalCodeOptimize({ addPhotographicSpecs: true, filmStock: 'Cinestill 800T' });
+                    setShowCodeOptimizerMenu(false);
+                  }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-[#122723] text-[#cfe6df] flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Sparkles className="w-3 h-3 text-[#59c2e8]" />
+                  <span>إدراج محاكاة Cinestill 800T (Night)</span>
+                </button>
+
+                {syntaxReport.issues.length > 0 && (
+                  <div className="mt-1 pt-1 border-t border-[#1b342e] px-2 text-[10px] text-[#ffb454] flex flex-col gap-1">
+                    <span className="font-bold flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>الملاحظات المكتشفة ({syntaxReport.issues.length}):</span>
+                    </span>
+                    {syntaxReport.issues.slice(0, 2).map((iss, idx) => (
+                      <span key={idx} className="text-[#8faea5] truncate leading-tight">
+                        • {iss.message}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Output Label & Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">

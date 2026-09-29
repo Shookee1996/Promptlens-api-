@@ -74,21 +74,74 @@ export const COLORS: ColorDef[] = RAW_COLORS.map((c) => ({
   rgb: hex2rgb(c[0]),
 }));
 
-export function nearestColor(hex: string, lang: 'en' | 'ar' | 'fr' | 'es'): string {
-  const c = hex2rgb(hex);
-  let best = COLORS[0];
-  let bd = 1e9;
-  for (const col of COLORS) {
-    const dr = c[0] - col.rgb[0];
-    const dg = c[1] - col.rgb[1];
-    const db = c[2] - col.rgb[2];
-    const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
-    if (d < bd) {
-      bd = d;
+// Fast sRGB -> CIE XYZ -> CIELAB converter with numerical stability
+export function rgb2lab(r: number, g: number, b: number): [number, number, number] {
+  let rL = r / 255;
+  let gL = g / 255;
+  let bL = b / 255;
+
+  rL = rL > 0.04045 ? Math.pow((rL + 0.055) / 1.055, 2.4) : rL / 12.92;
+  gL = gL > 0.04045 ? Math.pow((gL + 0.055) / 1.055, 2.4) : gL / 12.92;
+  bL = bL > 0.04045 ? Math.pow((bL + 0.055) / 1.055, 2.4) : bL / 12.92;
+
+  // D65 Standard Illuminant reference white point
+  const X = (rL * 0.4124564 + gL * 0.3575761 + bL * 0.1804375) / 0.95047;
+  const Y = (rL * 0.2126729 + gL * 0.7151522 + bL * 0.0721750) / 1.00000;
+  const Z = (rL * 0.0193339 + gL * 0.1191920 + bL * 0.9503041) / 1.08883;
+
+  const fX = X > 0.008856 ? Math.cbrt(X) : 7.787 * X + 16 / 116;
+  const fY = Y > 0.008856 ? Math.cbrt(Y) : 7.787 * Y + 16 / 116;
+  const fZ = Z > 0.008856 ? Math.cbrt(Z) : 7.787 * Z + 16 / 116;
+
+  const L = Math.max(0, Math.min(100, 116 * fY - 16));
+  const A = Math.max(-128, Math.min(127, 500 * (fX - fY)));
+  const B = Math.max(-128, Math.min(127, 200 * (fY - fZ)));
+
+  return [L, A, B];
+}
+
+export function deltaE76(lab1: [number, number, number], lab2: [number, number, number]): number {
+  const dL = lab1[0] - lab2[0];
+  const da = lab1[1] - lab2[1];
+  const db = lab1[2] - lab2[2];
+  return Math.sqrt(dL * dL + da * da + db * db);
+}
+
+// Pre-computed CIELAB representations for color vocabulary
+const LAB_COLORS = COLORS.map((col) => ({
+  ...col,
+  lab: rgb2lab(col.rgb[0], col.rgb[1], col.rgb[2]),
+}));
+
+export function nearestColorLab(hex: string, lang: 'en' | 'ar' | 'fr' | 'es'): string {
+  const rgb = hex2rgb(hex);
+  const lab = rgb2lab(rgb[0], rgb[1], rgb[2]);
+  let best = LAB_COLORS[0];
+  let minDelta = 1e9;
+
+  for (const col of LAB_COLORS) {
+    const dE = deltaE76(lab, col.lab);
+    if (dE < minDelta) {
+      minDelta = dE;
       best = col;
     }
   }
   return best[lang] || best.en;
+}
+
+// Estimates correlated color temperature in Kelvin using McCamy's cubic approximation
+export function rgb2kelvin(r: number, g: number, b: number): number {
+  const sum = r + g + b;
+  if (sum === 0) return 5500;
+  const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / (sum * 0.95);
+  const y = (0.2126729 * r + 0.7151522 * g + 0.0721750 * b) / (sum * 1.0);
+  const n = (x - 0.3320) / (0.1858 - y);
+  const cct = 449 * Math.pow(n, 3) + 3525 * Math.pow(n, 2) + 6823.3 * n + 5520.33;
+  return Math.max(2000, Math.min(12000, Math.round(cct)));
+}
+
+export function nearestColor(hex: string, lang: 'en' | 'ar' | 'fr' | 'es'): string {
+  return nearestColorLab(hex, lang);
 }
 
 export const SAMPLES = [

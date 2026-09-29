@@ -126,8 +126,18 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
         return 'text-[#10a37f] bg-[#10a37f18] border-[#10a37f33]';
       case 'anthropic':
         return 'text-[#f59e0b] bg-[#d9770618] border-[#d9770633]';
+      case 'deepseek':
+        return 'text-[#38bdf8] bg-[#0284c718] border-[#0284c733]';
+      case 'groq':
+        return 'text-[#fb923c] bg-[#ea580c18] border-[#ea580c33]';
+      case 'openrouter':
+        return 'text-[#c084fc] bg-[#9333ea18] border-[#9333ea33]';
+      case 'mistral':
+        return 'text-[#fb7185] bg-[#e11d4818] border-[#e11d4833]';
+      case 'ollama':
+        return 'text-[#a3e635] bg-[#84cc1618] border-[#84cc1633]';
       default:
-        return 'text-[#c084fc] bg-[#a855f718] border-[#a855f733]';
+        return 'text-[#94a3b8] bg-[#64748b18] border-[#64748b33]';
     }
   };
 

@@ -32,11 +32,21 @@ export interface MetricData {
   thirdsRatio: number;
   textScore: number;
   flatRatio: number;
+  goldenRatio?: number;
+  leadingLines?: number;
+  dynamicRangeEV?: number;
+  lensFocalEstimate?: string;
+  noiseGrain?: number;
+  colorKelvin?: number;
+  atmosphericDepth?: number;
+  spatialFrequency?: number;
 }
 
 export interface PaletteItem {
   hex: string;
   pct: number;
+  name?: string;
+  cielab?: [number, number, number];
 }
 
 export interface AnalysisData {
@@ -49,6 +59,8 @@ export interface AnalysisData {
   scheme: 'monochromatic' | 'complementary' | 'analogous' | 'mix';
   lines: 'horizontal' | 'vertical' | 'diagonal' | null;
   isDesign: boolean;
+  engineMode?: 'turbo' | 'deep' | 'cinematic' | 'design';
+  moodSummary?: { moods: string[]; temp: string; energy: string; tone: string; kelvin: number };
 }
 
 export interface ClassificationData {
@@ -76,16 +88,36 @@ export interface ClassificationData {
   lines: 'horizontal' | 'vertical' | 'diagonal' | null;
 }
 
+export type ApiProviderType =
+  | 'gemini'
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'groq'
+  | 'openrouter'
+  | 'mistral'
+  | 'ollama'
+  | 'custom';
+
 export interface ApiInterface {
   id: string;
   name: string;
-  provider: 'openai' | 'gemini' | 'anthropic' | 'custom';
+  provider: ApiProviderType;
   model: string;
   key: string;
   baseUrl?: string;
   precision: 'std' | 'high' | 'max';
+  temperature?: number;
+  maxTokens?: number;
+  systemInstruction?: string;
+  timeoutSec?: number;
+  visionCapable?: boolean;
   enabled: boolean;
   _encrypted?: boolean;
+  lastTestLatencyMs?: number;
+  lastTestStatus?: 'ok' | 'err';
+  lastTestedAt?: number;
+  headers?: Record<string, string>;
 }
 
 export interface TokenUsage {
@@ -141,6 +173,22 @@ export interface BatchItem {
   latency?: LatencyMetrics;
 }
 
+export interface PromptSyntaxIssue {
+  type: 'warn' | 'info' | 'fix';
+  message: string;
+  fixApplied?: string;
+}
+
+export interface PromptCodeOptimizationResult {
+  optimizedPrompt: string;
+  optimizedNegative?: string | null;
+  syntaxScore: number; // 0 to 100
+  issuesFixed: PromptSyntaxIssue[];
+  tokensSaved?: number;
+  tagsAdded?: string[];
+  executionTimeMs: number;
+}
+
 export interface AdvancedFeatures {
   ultra: boolean;
   autoneg: boolean;
@@ -154,6 +202,13 @@ export interface AdvancedFeatures {
   api: boolean;
   harmony: boolean;
   mood: boolean;
+  localEngineMode?: 'turbo' | 'deep' | 'cinematic' | 'design';
+  cielab?: boolean;
+  goldenRatio?: boolean;
+  lensSim?: boolean;
+  codeOptimizerAuto?: boolean;
+  filmStockSim?: boolean;
+  photometricEV?: boolean;
 }
 
 export interface AppOptions {

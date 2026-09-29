@@ -198,7 +198,12 @@ export default function App() {
         prev.map((i) => (i.id === targetItem.id ? { ...i, status: 'analyzing', step: 1 } : i))
       );
 
-      const analysisResult = await analyzeImage(targetItem.file || targetItem.url);
+      const analysisResult = await analyzeImage(targetItem.file || targetItem.url, {
+        engineMode: adv.localEngineMode,
+        goldenRatio: adv.goldenRatio,
+        cielab: adv.cielab,
+        lensSim: adv.lensSim,
+      });
       const analysisData = analysisResult.data;
       const breakdown = analysisResult.latencyBreakdown;
       const classification = classify(analysisData);
@@ -237,6 +242,9 @@ export default function App() {
                 key: activeApi.key,
                 baseUrl: activeApi.baseUrl,
                 precision: activeApi.precision,
+                temperature: activeApi.temperature,
+                maxTokens: activeApi.maxTokens,
+                systemInstruction: activeApi.systemInstruction,
               }
             : undefined;
 
@@ -491,6 +499,9 @@ export default function App() {
           key: activeApi.key,
           baseUrl: activeApi.baseUrl,
           precision: activeApi.precision,
+          temperature: activeApi.temperature,
+          maxTokens: activeApi.maxTokens,
+          systemInstruction: activeApi.systemInstruction,
         }
       : undefined;
 
@@ -554,6 +565,14 @@ export default function App() {
       finalPrompt: activeItem.history[newIdx],
     };
     setItems((prev) => prev.map((i) => (i.id === activeItem.id ? updated : i)));
+  };
+
+  // Toggle advanced feature or set local engine mode
+  const handleAdvToggle = (key: keyof AdvancedFeatures, value?: any) => {
+    setAdv((prev) => ({
+      ...prev,
+      [key]: value !== undefined ? value : !prev[key],
+    }));
   };
 
   // Update prompt manually in textarea
@@ -688,6 +707,7 @@ export default function App() {
             showToast(`⚡ Switched to ${selectedName} ✓`, 'ok');
           }}
           onOpenApiModal={() => setModalState((prev) => ({ ...prev, api: true }))}
+          onAdvToggle={handleAdvToggle}
           tokenStats={tokenStats}
           isProcessing={isApiRunning}
           onOptsChange={(newOpts) => {
@@ -790,7 +810,7 @@ export default function App() {
         isOpen={modalState.adv}
         onClose={() => setModalState((prev) => ({ ...prev, adv: false }))}
         adv={adv}
-        onToggle={(key) => setAdv((prev) => ({ ...prev, [key]: !prev[key] }))}
+        onToggle={handleAdvToggle}
         lang={lang}
         onExportSettings={() => {
           const blob = new Blob([JSON.stringify({ adv, opts }, null, 2)], {
@@ -849,6 +869,11 @@ export default function App() {
           const filtered = apis.filter((a) => a.id !== id);
           saveApis(filtered, activeApiId === id ? null : activeApiId);
         }}
+        onToggleApiEnable={(id) => {
+          const updated = apis.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
+          saveApis(updated, activeApiId === id ? null : activeApiId);
+          showToast('تم تحديث حالة تفعيل المحرك ✓', 'ok');
+        }}
         tokenStats={tokenStats}
         onResetTokens={() => {
           setTokenStats({
@@ -869,6 +894,8 @@ export default function App() {
                 model: api.model,
                 key: api.key,
                 baseUrl: api.baseUrl,
+                temperature: api.temperature,
+                maxTokens: api.maxTokens,
               }),
             });
             const data = await r.json();

@@ -26,7 +26,7 @@ export const IntakePanel: React.FC<IntakePanelProps> = ({
   const t = I18N[lang].s;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [urlInput, setUrlInput] = useState('');
-  const [overlayMode, setOverlayMode] = useState<'edges' | 'regions' | 'grid' | 'none'>('edges');
+  const [overlayMode, setOverlayMode] = useState<'edges' | 'regions' | 'grid' | 'golden' | 'depth' | 'none'>('edges');
   const [overlayOpacity, setOverlayOpacity] = useState(60);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -113,6 +113,44 @@ export const IntakePanel: React.FC<IntakePanelProps> = ({
         ctx.moveTo(0, h3 * 2);
         ctx.lineTo(canvas.width, h3 * 2);
         ctx.stroke();
+      } else if (overlayMode === 'golden') {
+        // Golden Ratio Phi Grid & Spiral
+        const phi = 1.6180339887;
+        const phiX0 = canvas.width * (1 - 1 / phi);
+        const phiX1 = canvas.width * (1 / phi);
+        const phiY0 = canvas.height * (1 - 1 / phi);
+        const phiY1 = canvas.height * (1 / phi);
+
+        ctx.strokeStyle = `rgba(255, 217, 102, ${alpha * 0.9})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+
+        ctx.beginPath();
+        ctx.moveTo(phiX0, 0);
+        ctx.lineTo(phiX0, canvas.height);
+        ctx.moveTo(phiX1, 0);
+        ctx.lineTo(phiX1, canvas.height);
+        ctx.moveTo(0, phiY0);
+        ctx.lineTo(canvas.width, phiY0);
+        ctx.moveTo(0, phiY1);
+        ctx.lineTo(canvas.width, phiY1);
+        ctx.stroke();
+
+        // Golden intersection nodes
+        ctx.fillStyle = `rgba(255, 180, 84, ${alpha})`;
+        [[phiX0, phiY0], [phiX1, phiY0], [phiX0, phiY1], [phiX1, phiY1]].forEach(([nx, ny]) => {
+          ctx.beginPath();
+          ctx.arc(nx, ny, 6, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (overlayMode === 'depth') {
+        // Depth gradient simulation overlay
+        const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grad.addColorStop(0, `rgba(55, 214, 192, ${alpha * 0.4})`);
+        grad.addColorStop(0.5, `rgba(255, 180, 84, ${alpha * 0.2})`);
+        grad.addColorStop(1, `rgba(255, 107, 122, ${alpha * 0.4})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
     };
     img.src = item.url;
@@ -262,20 +300,30 @@ export const IntakePanel: React.FC<IntakePanelProps> = ({
                 <span>Visual Overlay</span>
               </span>
 
-              <div className="flex items-center gap-1 bg-[#0a1614] p-1 rounded-lg border border-[#1f3a34]">
-                {(['edges', 'regions', 'grid', 'none'] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setOverlayMode(m)}
-                    className={`px-2.5 py-1 text-[11px] font-mono rounded cursor-pointer transition-all ${
-                      overlayMode === m
-                        ? 'bg-[#37d6c0] text-[#06231e] font-bold'
-                        : 'text-[#8faea5] hover:text-white'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
+              <div className="flex items-center gap-1 bg-[#0a1614] p-1 rounded-lg border border-[#1f3a34] flex-wrap">
+                {(['edges', 'regions', 'grid', 'golden', 'depth', 'none'] as const).map((m) => {
+                  const labels: Record<typeof m, string> = {
+                    edges: 'حواف / Edges',
+                    regions: 'تكتل / Color',
+                    grid: 'شبكة 3×3',
+                    golden: 'النسبة الذهبية φ',
+                    depth: 'عمق / Depth',
+                    none: 'إخفاء',
+                  };
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => setOverlayMode(m)}
+                      className={`px-2 py-0.5 text-[10px] font-mono rounded cursor-pointer transition-all ${
+                        overlayMode === m
+                          ? 'bg-[#37d6c0] text-[#06231e] font-bold shadow-sm'
+                          : 'text-[#8faea5] hover:text-white'
+                      }`}
+                    >
+                      {labels[m]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -364,7 +412,9 @@ export const IntakePanel: React.FC<IntakePanelProps> = ({
                 { label: t.mtDetail, val: item.a.m.detail },
                 { label: t.mtColor, val: item.a.m.colorful },
                 { label: t.mtDepth, val: item.a.m.depth },
+                { label: 'النسبة الذهبية φ', val: item.a.m.goldenRatio || 0 },
                 { label: t.mtText, val: item.a.m.textScore },
+                { label: 'العمق الجوي / Fog', val: item.a.m.atmosphericDepth || 0 },
               ].map((meter) => (
                 <div key={meter.label} className="flex items-center justify-between gap-2">
                   <span className="text-[#8faea5] text-[11px] truncate">{meter.label}</span>
@@ -379,6 +429,27 @@ export const IntakePanel: React.FC<IntakePanelProps> = ({
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Local Engine Photometric & Sensor Badges */}
+          {item.a && (item.a.m.dynamicRangeEV || item.a.m.colorKelvin || item.a.m.lensFocalEstimate) && (
+            <div className="bg-[#091513] border border-[#1d3833] rounded-xl p-2.5 flex items-center justify-between gap-2 flex-wrap text-[11px] font-mono">
+              {item.a.m.lensFocalEstimate && (
+                <span className="text-[#ffb454] bg-[#ffb45415] px-2 py-0.5 rounded border border-[#ffb45433]">
+                  📷 {item.a.m.lensFocalEstimate}
+                </span>
+              )}
+              {item.a.m.dynamicRangeEV && (
+                <span className="text-[#37d6c0] bg-[#37d6c015] px-2 py-0.5 rounded border border-[#37d6c033]">
+                  ⚡ {item.a.m.dynamicRangeEV} EV Range
+                </span>
+              )}
+              {item.a.m.colorKelvin && (
+                <span className="text-[#3ddc84] bg-[#3ddc8415] px-2 py-0.5 rounded border border-[#3ddc8433]">
+                  🌡️ {item.a.m.colorKelvin}K Kelvin
+                </span>
+              )}
             </div>
           )}
 

@@ -79,11 +79,16 @@ app.get('/api/ping', (_req, res) => {
 
 // Interface for multi-provider API configuration
 interface ApiConfigPayload {
-  provider?: 'gemini' | 'openai' | 'anthropic' | 'custom';
+  provider?: 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'groq' | 'openrouter' | 'mistral' | 'ollama' | 'custom';
   model?: string;
   key?: string;
   baseUrl?: string;
   precision?: 'std' | 'high' | 'max';
+  temperature?: number;
+  maxTokens?: number;
+  systemInstruction?: string;
+  timeoutSec?: number;
+  visionCapable?: boolean;
 }
 
 interface ProviderResult {
@@ -93,6 +98,48 @@ interface ProviderResult {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+  };
+}
+
+function getOpenAICompatibleConfig(provider: string, baseUrl?: string, model?: string) {
+  let endpoint = baseUrl;
+  let defaultModel = model;
+  let providerLabel = 'OpenAI';
+
+  if (provider === 'deepseek') {
+    endpoint = endpoint || 'https://api.deepseek.com/v1';
+    defaultModel = defaultModel || 'deepseek-chat';
+    providerLabel = 'DeepSeek';
+  } else if (provider === 'groq') {
+    endpoint = endpoint || 'https://api.groq.com/openai/v1';
+    defaultModel = defaultModel || 'llama-3.3-70b-versatile';
+    providerLabel = 'Groq';
+  } else if (provider === 'openrouter') {
+    endpoint = endpoint || 'https://openrouter.ai/api/v1';
+    defaultModel = defaultModel || 'qwen/qwen-2.5-vl-72b-instruct';
+    providerLabel = 'OpenRouter';
+  } else if (provider === 'mistral') {
+    endpoint = endpoint || 'https://api.mistral.ai/v1';
+    defaultModel = defaultModel || 'pixtral-large-latest';
+    providerLabel = 'Mistral AI';
+  } else if (provider === 'ollama') {
+    endpoint = endpoint || 'http://localhost:11434/v1';
+    defaultModel = defaultModel || 'llama3.2-vision:latest';
+    providerLabel = 'Local Ollama';
+  } else if (provider === 'openai') {
+    endpoint = endpoint || 'https://api.openai.com/v1';
+    defaultModel = defaultModel || 'gpt-4o';
+    providerLabel = 'OpenAI';
+  } else {
+    endpoint = endpoint || 'https://api.openai.com/v1';
+    defaultModel = defaultModel || 'custom-model';
+    providerLabel = 'Custom';
+  }
+
+  return {
+    endpoint: endpoint.replace(/\/+$/, '') + '/chat/completions',
+    targetModel: defaultModel,
+    providerLabel,
   };
 }
 
@@ -145,39 +192,49 @@ async function callProviderVision({
   const model = apiConfig?.model;
   const key = apiConfig?.key;
   const baseUrl = apiConfig?.baseUrl;
+  const activeTemp = apiConfig?.temperature !== undefined ? Number(apiConfig.temperature) : temperature;
+  const activeMaxTokens = apiConfig?.maxTokens ? Number(apiConfig.maxTokens) : 1500;
 
-  // 1. OpenAI or Custom OpenAI-compatible endpoint
-  if ((provider === 'openai' || provider === 'custom') && key) {
-    const endpoint = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/chat/completions';
-    const targetModel = model || (provider === 'openai' ? 'gpt-4o' : 'custom-vision');
+  // 1. OpenAI, DeepSeek, Groq, OpenRouter, Mistral, Ollama, or Custom OpenAI-compatible endpoints
+  const isOpenAICompatible = ['openai', 'deepseek', 'groq', 'openrouter', 'mistral', 'ollama', 'custom'].includes(provider);
+  if (isOpenAICompatible && (key || provider === 'ollama')) {
+    const { endpoint, targetModel, providerLabel } = getOpenAICompatibleConfig(provider, baseUrl, model);
+    const messages: any[] = [];
+    if (apiConfig?.systemInstruction) {
+      messages.push({ role: 'system', content: apiConfig.systemInstruction });
+    }
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: instruction },
+        {
+          type: 'image_url',
+          image_url: { url: `data:${mimeType};base64,${base64}` },
+        },
+      ],
+    });
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         model: targetModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: instruction },
-              {
-                type: 'image_url',
-                image_url: { url: `data:${mimeType};base64,${base64}` },
-              },
-            ],
-          },
-        ],
-        temperature,
-        max_tokens: 1500,
+        messages,
+        temperature: activeTemp,
+        max_tokens: activeMaxTokens,
       }),
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `OpenAI endpoint returned HTTP ${response.status}`);
+      throw new Error(err.error?.message || `${providerLabel} endpoint returned HTTP ${response.status}`);
     }
 
     const data = await response.json();
@@ -188,7 +245,7 @@ async function callProviderVision({
 
     return {
       text,
-      engine: `${provider === 'openai' ? 'OpenAI' : 'Custom'}: ${targetModel}`,
+      engine: `${providerLabel}: ${targetModel}`,
       tokens: { promptTokens, completionTokens, totalTokens },
     };
   }
@@ -197,6 +254,31 @@ async function callProviderVision({
   if (provider === 'anthropic' && key) {
     const endpoint = (baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '') + '/messages';
     const targetModel = model || 'claude-3-5-sonnet-latest';
+    const bodyObj: any = {
+      model: targetModel,
+      max_tokens: activeMaxTokens,
+      temperature: activeTemp,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: base64,
+              },
+            },
+            { type: 'text', text: instruction },
+          ],
+        },
+      ],
+    };
+    if (apiConfig?.systemInstruction) {
+      bodyObj.system = apiConfig.systemInstruction;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -204,26 +286,7 @@ async function callProviderVision({
         'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: targetModel,
-        max_tokens: 1500,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mimeType,
-                  data: base64,
-                },
-              },
-              { type: 'text', text: instruction },
-            ],
-          },
-        ],
-      }),
+      body: JSON.stringify(bodyObj),
     });
 
     if (!response.ok) {
@@ -274,23 +337,35 @@ async function callProviderVision({
       contents: { parts },
       config: {
         responseMimeType: 'application/json',
-        temperature,
+        temperature: activeTemp,
+        maxOutputTokens: activeMaxTokens,
+        systemInstruction: apiConfig?.systemInstruction ? { parts: [{ text: apiConfig.systemInstruction }] } : undefined,
       },
     });
   } catch (err: any) {
-    if (
-      targetModel === 'gemini-3.8-flash' &&
-      (err?.message?.includes('503') || err?.message?.includes('high demand') || err?.status === 503)
-    ) {
-      activeModel = 'gemini-3.1-flash-lite';
-      response = await geminiClient.models.generateContent({
-        model: activeModel,
-        contents: { parts },
-        config: {
-          responseMimeType: 'application/json',
-          temperature,
-        },
-      });
+    const isOverload =
+      err?.message?.includes('503') ||
+      err?.message?.includes('high demand') ||
+      err?.message?.includes('overloaded') ||
+      err?.message?.includes('UNAVAILABLE') ||
+      err?.status === 503;
+
+    if (isOverload) {
+      try {
+        activeModel = 'gemini-3.1-flash-lite';
+        response = await geminiClient.models.generateContent({
+          model: activeModel,
+          contents: { parts },
+          config: {
+            responseMimeType: 'application/json',
+            temperature: activeTemp,
+            maxOutputTokens: activeMaxTokens,
+            systemInstruction: apiConfig?.systemInstruction ? { parts: [{ text: apiConfig.systemInstruction }] } : undefined,
+          },
+        });
+      } catch {
+        return synthesizeVisionAnalysis(instruction);
+      }
     } else {
       throw err;
     }
@@ -327,30 +402,40 @@ async function callProviderEnhance({
   const model = apiConfig?.model;
   const key = apiConfig?.key;
   const baseUrl = apiConfig?.baseUrl;
+  const activeTemp = apiConfig?.temperature !== undefined ? Number(apiConfig.temperature) : temperature;
+  const activeMaxTokens = apiConfig?.maxTokens ? Number(apiConfig.maxTokens) : 1500;
 
-  // 1. OpenAI or Custom
-  if ((provider === 'openai' || provider === 'custom') && key) {
-    const endpoint = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/chat/completions';
-    const targetModel = model || (provider === 'openai' ? 'gpt-4o-mini' : 'custom-model');
-    const messages: any[] = [{ role: 'user', content: instruction }];
+  // 1. OpenAI, DeepSeek, Groq, OpenRouter, Mistral, Ollama, or Custom
+  const isOpenAICompatible = ['openai', 'deepseek', 'groq', 'openrouter', 'mistral', 'ollama', 'custom'].includes(provider);
+  if (isOpenAICompatible && (key || provider === 'ollama')) {
+    const { endpoint, targetModel, providerLabel } = getOpenAICompatibleConfig(provider, baseUrl, model);
+    const messages: any[] = [];
+    if (apiConfig?.systemInstruction) {
+      messages.push({ role: 'system', content: apiConfig.systemInstruction });
+    }
+    messages.push({ role: 'user', content: instruction });
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         model: targetModel,
         messages,
-        temperature,
-        max_tokens: 1500,
+        temperature: activeTemp,
+        max_tokens: activeMaxTokens,
       }),
     });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `OpenAI returned HTTP ${response.status}`);
+      throw new Error(err.error?.message || `${providerLabel} returned HTTP ${response.status}`);
     }
 
     const data = await response.json();
@@ -361,7 +446,7 @@ async function callProviderEnhance({
 
     return {
       text,
-      engine: `${provider === 'openai' ? 'OpenAI' : 'Custom'}: ${targetModel}`,
+      engine: `${providerLabel}: ${targetModel}`,
       tokens: { promptTokens, completionTokens, totalTokens },
     };
   }
@@ -370,6 +455,16 @@ async function callProviderEnhance({
   if (provider === 'anthropic' && key) {
     const endpoint = (baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '') + '/messages';
     const targetModel = model || 'claude-3-5-sonnet-latest';
+    const bodyObj: any = {
+      model: targetModel,
+      max_tokens: activeMaxTokens,
+      temperature: activeTemp,
+      messages: [{ role: 'user', content: instruction }],
+    };
+    if (apiConfig?.systemInstruction) {
+      bodyObj.system = apiConfig.systemInstruction;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -377,11 +472,7 @@ async function callProviderEnhance({
         'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: targetModel,
-        max_tokens: 1500,
-        messages: [{ role: 'user', content: instruction }],
-      }),
+      body: JSON.stringify(bodyObj),
     });
 
     if (!response.ok) {
@@ -431,23 +522,35 @@ async function callProviderEnhance({
       contents: { parts },
       config: {
         responseMimeType: 'application/json',
-        temperature,
+        temperature: activeTemp,
+        maxOutputTokens: activeMaxTokens,
+        systemInstruction: apiConfig?.systemInstruction ? { parts: [{ text: apiConfig.systemInstruction }] } : undefined,
       },
     });
   } catch (err: any) {
-    if (
-      targetModel === 'gemini-3.8-flash' &&
-      (err?.message?.includes('503') || err?.message?.includes('high demand') || err?.status === 503)
-    ) {
-      activeModel = 'gemini-3.1-flash-lite';
-      response = await geminiClient.models.generateContent({
-        model: activeModel,
-        contents: { parts },
-        config: {
-          responseMimeType: 'application/json',
-          temperature,
-        },
-      });
+    const isOverload =
+      err?.message?.includes('503') ||
+      err?.message?.includes('high demand') ||
+      err?.message?.includes('overloaded') ||
+      err?.message?.includes('UNAVAILABLE') ||
+      err?.status === 503;
+
+    if (isOverload) {
+      try {
+        activeModel = 'gemini-3.1-flash-lite';
+        response = await geminiClient.models.generateContent({
+          model: activeModel,
+          contents: { parts },
+          config: {
+            responseMimeType: 'application/json',
+            temperature: activeTemp,
+            maxOutputTokens: activeMaxTokens,
+            systemInstruction: apiConfig?.systemInstruction ? { parts: [{ text: apiConfig.systemInstruction }] } : undefined,
+          },
+        });
+      } catch {
+        return synthesizePromptEnhancement(instruction);
+      }
     } else {
       throw err;
     }
@@ -498,22 +601,26 @@ app.post('/api/api-test', async (req, res) => {
       });
     }
 
-    if (provider === 'openai' || provider === 'custom') {
-      if (!key) {
+    const isOpenAICompatible = ['openai', 'deepseek', 'groq', 'openrouter', 'mistral', 'ollama', 'custom'].includes(provider);
+    if (isOpenAICompatible) {
+      if (!key && provider !== 'ollama') {
         return res.status(400).json({ ok: false, error: 'API key is required' });
       }
-      const endpoint = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/chat/completions';
-      const targetModel = model || (provider === 'openai' ? 'gpt-4o-mini' : 'custom');
+      const { endpoint, targetModel, providerLabel } = getOpenAICompatibleConfig(provider, baseUrl, model);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (key) {
+        headers['Authorization'] = `Bearer ${key}`;
+      }
 
       const testRes = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           model: targetModel,
-          messages: [{ role: 'user', content: 'Ping test' }],
+          messages: [{ role: 'user', content: 'Ping health check. Respond with: OK' }],
           max_tokens: 5,
         }),
       });
@@ -521,14 +628,14 @@ app.post('/api/api-test', async (req, res) => {
       const latencyMs = Math.round(performance.now() - startTime);
       if (!testRes.ok) {
         const errJson = await testRes.json().catch(() => ({}));
-        throw new Error(errJson.error?.message || `Endpoint returned HTTP ${testRes.status}`);
+        throw new Error(errJson.error?.message || `${providerLabel} returned HTTP ${testRes.status}`);
       }
       return res.json({
         ok: true,
         latencyMs,
         provider,
         model: targetModel,
-        message: 'Endpoint verified and responsive',
+        message: `${providerLabel} (${targetModel}) verified and responsive`,
       });
     }
 
