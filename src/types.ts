@@ -209,6 +209,10 @@ export interface AdvancedFeatures {
   codeOptimizerAuto?: boolean;
   filmStockSim?: boolean;
   photometricEV?: boolean;
+  smartRouting?: boolean;
+  smartRoutingMode?: 'auto' | 'vision' | 'speed' | 'offline';
+  autoFailover?: boolean;
+  batchLoadBalancing?: boolean;
 }
 
 export interface AppOptions {

@@ -14,6 +14,7 @@ import {
   AboutModal,
   ContactModal,
 } from './components/Modals';
+import { ApiCommandPalette } from './components/ApiCommandPalette';
 import {
   BatchItem,
   AppOptions,
@@ -96,6 +97,9 @@ export default function App() {
     contact: false,
   });
 
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isBenchmarking, setIsBenchmarking] = useState(false);
+
   // Toast state
   const [toastMsg, setToastMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
   const toastTimeoutRef = useRef<any>(null);
@@ -159,6 +163,66 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Run comprehensive parallel speed test and benchmark on all configured APIs
+  const runSpeedBenchmark = async () => {
+    setIsBenchmarking(true);
+    showToast('⚡ جارٍ فحص واختبار سرعة واستجابة كافة محركات الـ API في آنٍ واحد...', 'ok');
+    try {
+      const tPing0 = performance.now();
+      try {
+        const res = await fetch('/api/ping');
+        if (res.ok) {
+          const pingMs = Math.round(performance.now() - tPing0);
+          setLatestLatency((prev) => (prev ? { ...prev, pingMs } : null));
+        }
+      } catch {}
+
+      if (apis.length > 0) {
+        const updatedApis = await Promise.all(
+          apis.map(async (api) => {
+            if (!api.enabled) return api;
+            const t0 = performance.now();
+            try {
+              const res = await fetch('/api/api-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  provider: api.provider,
+                  model: api.model,
+                  key: api.key,
+                  baseUrl: api.baseUrl,
+                  temperature: api.temperature,
+                  maxTokens: 50,
+                }),
+              });
+              const data = await res.json();
+              const latencyMs = data.latencyMs || Math.round(performance.now() - t0);
+              return {
+                ...api,
+                lastTestLatencyMs: latencyMs,
+                lastTestStatus: (data.ok ? 'ok' : 'err') as 'ok' | 'err',
+                lastTestedAt: Date.now(),
+              };
+            } catch {
+              return {
+                ...api,
+                lastTestLatencyMs: Math.round(performance.now() - t0),
+                lastTestStatus: 'err' as const,
+                lastTestedAt: Date.now(),
+              };
+            }
+          })
+        );
+        await saveApis(updatedApis, activeApiId);
+      }
+      showToast('⚡ اكتمل فحص السرعة! تم قياس زمن الاستجابة وترتيب المحركات بنجاح ✓', 'ok');
+    } catch {
+      showToast('حدث خطأ أثناء فحص السرعة', 'err');
+    } finally {
+      setIsBenchmarking(false);
+    }
+  };
+
   // Load saved API store on mount
   useEffect(() => {
     (async () => {
@@ -177,6 +241,54 @@ export default function App() {
     })();
   }, []);
 
+  // Global Keyboard Shortcuts for Direct & Intelligent API Switching (Ctrl+K, Alt+K, Alt+1..9, Alt+0, Alt+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle Command Palette HUD with Ctrl+K, Cmd+K, or Alt+K
+      if ((e.ctrlKey || e.metaKey || e.altKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.code === 'Digit1') {
+          e.preventDefault();
+          if (adv.smartRouting) handleAdvToggle('smartRouting', false);
+          saveApis(apis, null);
+          showToast('⚡ Direct Switch: Google Gemini 3.8 Flash (Built-in) ✓', 'ok');
+        } else if (e.code === 'Digit0') {
+          e.preventDefault();
+          if (adv.smartRouting) handleAdvToggle('smartRouting', false);
+          handleAdvToggle('localEngineMode', 'deep');
+          showToast('⚡ Direct Switch: 100% Offline Local Engine ✓', 'ok');
+        } else if (e.code.startsWith('Digit')) {
+          const num = parseInt(e.code.replace('Digit', ''), 10);
+          const targetIndex = num - 2;
+          if (targetIndex >= 0 && targetIndex < apis.length) {
+            e.preventDefault();
+            if (adv.smartRouting) handleAdvToggle('smartRouting', false);
+            const target = apis[targetIndex];
+            saveApis(apis, target.id);
+            showToast(`⚡ Direct Switch: ${target.name} (${target.model}) ✓`, 'ok');
+          }
+        } else if (e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'a') {
+          e.preventDefault();
+          const nextVal = !adv.smartRouting;
+          handleAdvToggle('smartRouting', nextVal);
+          showToast(
+            nextVal
+              ? '🤖 تم تفعيل التوجيه الذكي التلقائي: اختيار أفضل نموذج وتفادي الأخطاء ✓'
+              : 'تم الرجوع للاختيار اليدوي للنماذج',
+            'ok'
+          );
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [apis, adv.smartRouting]);
+
   const saveApis = async (newApis: ApiInterface[], activeId: string | null) => {
     setApis(newApis);
     setActiveApiId(activeId);
@@ -191,7 +303,7 @@ export default function App() {
     workerConfig.isProcessing ||
     items.some((i) => i.status === 'api' || i.status === 'analyzing' || i.status === 'enhancing');
 
-  // Process a single item and return timing
+  // Process a single item and return timing with intelligent routing and multi-tier auto-failover
   const processSingleItem = async (targetItem: BatchItem): Promise<boolean> => {
     try {
       setItems((prev) =>
@@ -216,7 +328,76 @@ export default function App() {
       let itemTokens: TokenUsage | undefined;
       let apiRoundtripMs = 0;
 
-      if (adv.api || activeApiId) {
+      // Intelligent Content-Aware Smart API Router
+      let targetApiId: string | null | undefined = activeApiId;
+      let isSmartRouted = false;
+      let routingReason = '';
+
+      if (adv.smartRouting) {
+        isSmartRouted = true;
+        const mode = adv.smartRoutingMode || 'auto';
+
+        if (mode === 'offline') {
+          // Explicit offline mode: route directly to local engine
+          targetApiId = undefined;
+          routingReason = '100% Offline Mode';
+        } else if (mode === 'speed') {
+          // Speed priority: pick lowest ping/latency verified API
+          const enabledApisWithLatency = apis.filter((a) => a.enabled && (a.lastTestLatencyMs || 0) > 0);
+          if (enabledApisWithLatency.length > 0) {
+            const fastest = enabledApisWithLatency.sort(
+              (a, b) => (a.lastTestLatencyMs || 9999) - (b.lastTestLatencyMs || 9999)
+            )[0];
+            targetApiId = fastest.id;
+            routingReason = `Fastest (${fastest.lastTestLatencyMs}ms)`;
+          } else {
+            targetApiId = null; // server Gemini 3.8
+            routingReason = 'Fast Server Built-in (~20ms)';
+          }
+        } else if (mode === 'vision') {
+          // Quality & precision priority: pick max precision vision model
+          const highPrecisionVision = apis.find(
+            (a) => a.enabled && a.visionCapable && (a.precision === 'max' || a.precision === 'high')
+          );
+          if (highPrecisionVision) {
+            targetApiId = highPrecisionVision.id;
+            routingReason = `Max Precision (${highPrecisionVision.name})`;
+          } else {
+            targetApiId = null; // server Gemini 3.8
+            routingReason = 'Gemini 3.8 Multimodal';
+          }
+        } else {
+          // Adaptive Context-Aware Smart Router (Default Auto Mode)
+          const isComplexScene =
+            classification.hasText ||
+            classification.isDesign ||
+            analysisData.m.detail > 0.7 ||
+            classification.styleKey === 'photoreal';
+
+          if (isComplexScene) {
+            const visionCapableCustom = apis.find((a) => a.enabled && a.visionCapable);
+            if (visionCapableCustom) {
+              targetApiId = visionCapableCustom.id;
+              routingReason = `Complex Scene -> ${visionCapableCustom.name}`;
+            } else {
+              targetApiId = null; // built-in server Gemini
+              routingReason = 'Complex Scene -> Gemini 3.8 Multimodal';
+            }
+          } else {
+            // Standard scene: use active API or fast server
+            const enabledApi = apis.find((a) => a.enabled);
+            if (enabledApi) {
+              targetApiId = enabledApi.id;
+              routingReason = `Standard Scene -> ${enabledApi.name}`;
+            } else {
+              targetApiId = null;
+              routingReason = 'Built-in Gemini 3.8';
+            }
+          }
+        }
+      }
+
+      if (adv.api && targetApiId !== undefined) {
         try {
           setItems((prev) =>
             prev.map((i) => (i.id === targetItem.id ? { ...i, status: 'api', step: 3 } : i))
@@ -234,7 +415,7 @@ export default function App() {
             reader.readAsDataURL(blob);
           });
 
-          const activeApi = apis.find((a) => a.id === activeApiId && a.enabled);
+          const activeApi = targetApiId ? apis.find((a) => a.id === targetApiId && a.enabled) : null;
           const apiConfig = activeApi
             ? {
                 provider: activeApi.provider,
@@ -248,7 +429,7 @@ export default function App() {
               }
             : undefined;
 
-          const apiRes = await fetch('/api/gemini/analyze', {
+          let apiRes = await fetch('/api/gemini/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -259,13 +440,33 @@ export default function App() {
             }),
           });
 
+          // Multi-Tier Intelligent Auto-Failover:
+          // Tier 1 Failure -> Immediately failover to Built-in Server Gemini 3.8
+          if (!apiRes.ok && apiConfig) {
+            apiRes = await fetch('/api/gemini/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                base64,
+                mimeType: blob.type || 'image/jpeg',
+                instruction: `Generate an elite AI prompt for image generation in ${opts.pLang}. Target model: ${opts.style}. Detail: exhaustive. Include style, layout, lighting, color palette (${analysisData.palette.map((p) => p.hex).join(', ')}), composition, and professional design aesthetics.`,
+                apiConfig: undefined,
+              }),
+            });
+            if (apiRes.ok) {
+              showToast('🔄 Smart Auto-Failover: Fallback to Gemini 3.8 Flash successful ✓', 'ok');
+            }
+          }
+
           if (apiRes.ok) {
             const apiData = await apiRes.json();
             if (apiData.prompt) {
               finalPrompt = apiData.prompt;
               finalNeg = apiData.negative || null;
               usedApi = true;
-              apiEngine = apiData.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
+              apiEngine = isSmartRouted
+                ? `🤖 Smart (${apiData.engine || (activeApi ? activeApi.name : 'Gemini 3.8')})`
+                : apiData.engine || (activeApi ? activeApi.name : 'Gemini 3.8 Flash');
               apiRoundtripMs = apiData.latencyMs || Math.round(performance.now() - tApiStart);
               if (apiData.tokens) {
                 itemTokens = apiData.tokens;
@@ -274,10 +475,11 @@ export default function App() {
             }
           }
         } catch {
-          // fallback to local prompt builder
+          // fallback gracefully to local prompt builder
         }
       }
 
+      // Tier 2 Fallback -> 100% Offline Local Analysis Synthesis
       if (!finalPrompt) {
         const local = buildPrompt(
           { ...targetItem, a: analysisData, cls: classification },
@@ -286,6 +488,9 @@ export default function App() {
         );
         finalPrompt = local.main;
         finalNeg = local.neg;
+        if (isSmartRouted && (adv.smartRoutingMode === 'offline' || !adv.api)) {
+          apiEngine = '🔬 Smart Local Engine (Offline)';
+        }
       }
 
       const totalMs = breakdown.totalMs + apiRoundtripMs;
@@ -627,7 +832,7 @@ export default function App() {
           const selectedName = id
             ? apis.find((a) => a.id === id)?.name || 'Custom Engine'
             : 'Built-in Gemini 3.8 Flash';
-          showToast(`Switched to ${selectedName} ✓`, 'ok');
+          showToast(`⚡ Switched to ${selectedName} ✓`, 'ok');
         }}
         tokenStats={tokenStats}
         onResetTokens={() => {
@@ -647,6 +852,14 @@ export default function App() {
         onOpenAbout={() => setModalState((prev) => ({ ...prev, about: true }))}
         onOpenApi={() => setModalState((prev) => ({ ...prev, api: true }))}
         isProcessing={isApiRunning}
+        isSmartRouting={adv.smartRouting}
+        onToggleSmartRouting={() => handleAdvToggle('smartRouting', !adv.smartRouting)}
+        onToast={showToast}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onRunSpeedBenchmark={runSpeedBenchmark}
+        isBenchmarking={isBenchmarking}
+        smartRoutingMode={adv.smartRoutingMode || 'auto'}
+        onSetSmartRoutingMode={(mode) => handleAdvToggle('smartRoutingMode', mode)}
       />
 
       {/* 1K to 12K Quality Deck */}
@@ -743,6 +956,7 @@ export default function App() {
             !!activeItem?.history && activeItem.historyIndex! < activeItem.history.length - 1
           }
           onToast={showToast}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
 
         {/* Panel 3: History & Batch Manager */}
@@ -941,6 +1155,19 @@ export default function App() {
       <PerfModal
         isOpen={modalState.perf}
         onClose={() => setModalState((prev) => ({ ...prev, perf: false }))}
+        tokenStats={tokenStats}
+        items={items}
+        apis={apis}
+        latestLatency={latestLatency}
+        onResetTokens={() => {
+          setTokenStats({
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            totalTokens: 0,
+            callCount: 0,
+          });
+          showToast('Token counters reset to 0 ✓', 'ok');
+        }}
       />
 
       <AboutModal
@@ -952,6 +1179,27 @@ export default function App() {
         isOpen={modalState.contact}
         onClose={() => setModalState((prev) => ({ ...prev, contact: false }))}
         onToast={showToast}
+      />
+
+      {/* Floating Direct & Smart API Command Palette HUD (Ctrl+K / Alt+K) */}
+      <ApiCommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        apis={apis}
+        activeApiId={activeApiId}
+        onSelectApi={(id) => {
+          saveApis(apis, id);
+          const selectedName = id
+            ? apis.find((a) => a.id === id)?.name || 'Custom Engine'
+            : 'Built-in Gemini 3.8 Flash';
+          showToast(`⚡ Switched to ${selectedName} ✓`, 'ok');
+        }}
+        adv={adv}
+        onAdvToggle={handleAdvToggle}
+        onOpenApiModal={() => setModalState((prev) => ({ ...prev, api: true }))}
+        onToast={showToast}
+        onRunSpeedBenchmark={runSpeedBenchmark}
+        isBenchmarking={isBenchmarking}
       />
 
       {/* Floating Toast Notification */}

@@ -14,6 +14,10 @@ import {
   Copy,
   Radio,
   CheckCircle2,
+  Bot,
+  Flame,
+  Activity,
+  Command,
 } from 'lucide-react';
 import { ApiInterface, SessionTokenStats } from '../types';
 
@@ -25,6 +29,14 @@ interface ApiQuickSwitcherProps {
   tokenStats: SessionTokenStats;
   onResetTokens: () => void;
   isProcessing?: boolean;
+  isSmartRouting?: boolean;
+  onToggleSmartRouting?: () => void;
+  onToast?: (msg: string, type?: 'ok' | 'err') => void;
+  onOpenCommandPalette?: () => void;
+  onRunSpeedBenchmark?: () => Promise<void>;
+  isBenchmarking?: boolean;
+  smartRoutingMode?: 'auto' | 'vision' | 'speed' | 'offline';
+  onSetSmartRoutingMode?: (mode: 'auto' | 'vision' | 'speed' | 'offline') => void;
 }
 
 // Smooth animated rolling number component
@@ -74,6 +86,14 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
   tokenStats,
   onResetTokens,
   isProcessing = false,
+  isSmartRouting = false,
+  onToggleSmartRouting,
+  onToast,
+  onOpenCommandPalette,
+  onRunSpeedBenchmark,
+  isBenchmarking = false,
+  smartRoutingMode = 'auto',
+  onSetSmartRoutingMode,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -363,16 +383,26 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
               setIsStatsOpen(false);
             }}
             className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-mono font-bold tracking-wide text-[#cfe6df] hover:text-white cursor-pointer transition-colors"
-            title="Click to switch API Engine directly (انتقال مباشر بين الـ API)"
+            title="Click to switch API Engine directly (انتقال مباشر بين الـ API - Alt+1..9)"
           >
-            <KeyRound className="w-3.5 h-3.5 text-[#37d6c0]" />
-            <span className="text-[10px] uppercase font-bold text-[#8faea5] hidden sm:inline">API:</span>
+            {isSmartRouting ? (
+              <Bot className="w-3.5 h-3.5 text-[#ffb454] animate-pulse" />
+            ) : (
+              <KeyRound className="w-3.5 h-3.5 text-[#37d6c0]" />
+            )}
+            <span className="text-[10px] uppercase font-bold text-[#8faea5] hidden sm:inline">
+              {isSmartRouting ? 'Smart:' : 'API:'}
+            </span>
             <span className="text-[11px] text-[#37d6c0] max-w-[130px] truncate">
-              {activeLabel}
+              {isSmartRouting ? '🤖 Auto-Route' : activeLabel}
             </span>
             <span
               className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                activeApiId ? 'bg-[#3ddc84] shadow-[0_0_8px_#3ddc84]' : 'bg-[#3ddc84] animate-pulse'
+                isSmartRouting
+                  ? 'bg-[#ffb454] shadow-[0_0_8px_#ffb454] animate-ping'
+                  : activeApiId
+                  ? 'bg-[#3ddc84] shadow-[0_0_8px_#3ddc84]'
+                  : 'bg-[#3ddc84] animate-pulse'
               }`}
             />
             <ChevronDown
@@ -385,28 +415,92 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
 
         {/* Direct Switch Dropdown Menu */}
         {isMenuOpen && (
-          <div className="absolute top-full mt-2 inset-inline-end-0 w-76 bg-[#0a1614] border border-[#2a4a44] rounded-2xl p-2.5 shadow-2xl z-50 animate-slide-down">
-            <div className="px-3 py-2 border-b border-[#1b3630] mb-1.5 flex items-center justify-between">
+          <div className="absolute top-full mt-2 inset-inline-end-0 w-80 bg-[#0a1614] border border-[#2a4a44] rounded-2xl p-2.5 shadow-2xl z-50 animate-slide-down font-mono">
+            <div className="px-3 py-2 border-b border-[#1b3630] mb-2 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-mono text-[#37d6c0] uppercase tracking-wider block font-bold">
-                  ⚡ الانتقال المباشر بين الـ API
+                  ⚡ الانتقال المباشر والذكي للـ API
                 </span>
-                <span className="text-[11px] text-[#8faea5]">Direct 1-Click Engine Activation</span>
+                <span className="text-[10px] text-[#8faea5]">Direct & Intelligent Engine Switching</span>
               </div>
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#122622] text-[#8faea5] border border-[#22403a]">
-                {1 + apis.length} Ready
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#122622] text-[#37d6c0] border border-[#22403a] font-bold">
+                Alt+1..9
               </span>
             </div>
 
-            {/* Option: Built-in Gemini Engine */}
+            {/* Smart Auto-Routing Mode Toggle */}
+            {onToggleSmartRouting && (
+              <div className="mb-2 p-2 rounded-xl bg-gradient-to-r from-[#172922] via-[#0f211d] to-[#1a2c27] border border-[#295449] shadow-inner">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-4 h-4 text-[#ffb454]" />
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        التوجيه الذكي التلقائي (Smart Router)
+                      </span>
+                      <span className="text-[9px] text-[#8faea5] block font-mono">
+                        اختيار النموذج الأمثل وتفادي الأخطاء تلقائياً
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleSmartRouting();
+                      if (onToast) {
+                        onToast(!isSmartRouting ? '🤖 تم تفعيل التوجيه الذكي التلقائي ✓' : 'تم الرجوع للاختيار اليدوي', 'ok');
+                      }
+                    }}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      isSmartRouting
+                        ? 'bg-[#ffb454] text-[#1e1305] shadow-[0_0_10px_rgba(255,180,84,0.4)]'
+                        : 'bg-[#0a1614] text-[#8faea5] border border-[#23423c] hover:text-white'
+                    }`}
+                  >
+                    {isSmartRouting ? 'مفعّل ON' : 'تفعيل'}
+                  </button>
+                </div>
+
+                {/* Sub-modes for Smart Routing */}
+                {isSmartRouting && onSetSmartRoutingMode && (
+                  <div className="grid grid-cols-2 gap-1 pt-1.5 border-t border-[#1e3c34]">
+                    {[
+                      { key: 'auto' as const, label: '🧠 تكيّفي (Adaptive)' },
+                      { key: 'speed' as const, label: '⚡ أسرع استجابة (Speed)' },
+                      { key: 'vision' as const, label: '🎯 أعلى دقة (Quality)' },
+                      { key: 'offline' as const, label: '🛡️ محلي 100% (Offline)' },
+                    ].map((mode) => (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => {
+                          onSetSmartRoutingMode(mode.key);
+                          if (onToast) onToast(`تم اختيار نمط التوجيه: ${mode.label} ✓`, 'ok');
+                        }}
+                        className={`px-2 py-1 rounded text-[9px] font-mono font-semibold transition-all text-start truncate cursor-pointer ${
+                          smartRoutingMode === mode.key
+                            ? 'bg-[#ffb45422] text-[#ffb454] border border-[#ffb45466] font-bold'
+                            : 'bg-[#0a1816] text-[#8faea5] hover:text-white border border-transparent'
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Option 1: Built-in Gemini Engine */}
             <button
               type="button"
               onClick={() => {
                 onSelectApi(null);
                 setIsMenuOpen(false);
+                if (onToast) onToast('⚡ انتقلت مباشرة إلى Google Gemini 3.8 Flash ✓', 'ok');
               }}
               className={`w-full text-start p-2.5 rounded-xl transition-all flex items-center justify-between gap-2 cursor-pointer mb-1 ${
-                activeApiId === null
+                !isSmartRouting && activeApiId === null
                   ? 'bg-[#3ddc8418] border border-[#3ddc8444] text-white shadow-sm ring-1 ring-[#3ddc8433]'
                   : 'hover:bg-[#122622] text-[#cfe6df] border border-transparent hover:border-[#22403a]'
               }`}
@@ -414,24 +508,27 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
               <div className="flex items-center gap-2.5">
                 <span
                   className={`w-2.5 h-2.5 rounded-full flex-none transition-all ${
-                    activeApiId === null
+                    !isSmartRouting && activeApiId === null
                       ? 'bg-[#3ddc84] shadow-[0_0_8px_#3ddc84]'
                       : 'bg-[#54736c]'
                   }`}
                 />
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs font-bold text-white">Gemini 3.8 Flash</span>
                     <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#3ddc8422] text-[#3ddc84] border border-[#3ddc8433]">
                       BUILT-IN
                     </span>
+                    <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#0a1614] text-[#8faea5] border border-[#1b342e]">
+                      Alt+1
+                    </span>
                   </div>
-                  <span className="text-[10px] text-[#8faea5] block font-mono">
-                    Zero-config · Fast response (~20ms)
+                  <span className="text-[10px] text-[#8faea5] block font-mono mt-0.5">
+                    👁️ Vision Capable · Fast (~20ms)
                   </span>
                 </div>
               </div>
-              {activeApiId === null ? (
+              {!isSmartRouting && activeApiId === null ? (
                 <span className="text-[10px] font-mono font-bold text-[#3ddc84] bg-[#0d2a23] px-1.5 py-0.5 rounded border border-[#22403a] flex items-center gap-1">
                   <Check className="w-3 h-3 text-[#3ddc84]" />
                   <span>نشط</span>
@@ -447,10 +544,11 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
             {apis.length > 0 && (
               <div className="my-1 border-t border-[#1b3630] pt-1.5">
                 <span className="text-[9px] font-mono text-[#54736c] uppercase px-3 py-1 block">
-                  Custom Engines ({apis.length})
+                  Configured APIs ({apis.length})
                 </span>
-                {apis.map((api) => {
-                  const isThisActive = api.id === activeApiId;
+                {apis.map((api, idx) => {
+                  const isThisActive = !isSmartRouting && api.id === activeApiId;
+                  const shortcutKey = `Alt+${idx + 2}`;
                   return (
                     <button
                       key={api.id}
@@ -458,10 +556,11 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
                       onClick={() => {
                         onSelectApi(api.id);
                         setIsMenuOpen(false);
+                        if (onToast) onToast(`⚡ انتقلت مباشرة إلى ${api.name} (${api.model}) ✓`, 'ok');
                       }}
                       className={`w-full text-start p-2.5 rounded-xl transition-all flex items-center justify-between gap-2 cursor-pointer mb-1 ${
                         isThisActive
-                          ? 'bg-[#3ddc8418] border border-[#3ddc8444] text-white shadow-sm ring-1 ring-[#3ddc8433]'
+                          ? 'bg-[#37d6c018] border border-[#37d6c044] text-white shadow-sm ring-1 ring-[#37d6c033]'
                           : 'hover:bg-[#122622] text-[#cfe6df] border border-transparent hover:border-[#22403a]'
                       }`}
                     >
@@ -469,13 +568,13 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
                         <span
                           className={`w-2.5 h-2.5 rounded-full flex-none transition-all ${
                             isThisActive
-                              ? 'bg-[#3ddc84] shadow-[0_0_8px_#3ddc84]'
+                              ? 'bg-[#37d6c0] shadow-[0_0_8px_#37d6c0]'
                               : 'bg-[#54736c]'
                           }`}
                         />
                         <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-white truncate max-w-[140px]">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-white truncate max-w-[130px]">
                               {api.name}
                             </span>
                             <span
@@ -485,15 +584,19 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
                             >
                               {api.provider}
                             </span>
+                            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#0a1614] text-[#8faea5] border border-[#1b342e]">
+                              {shortcutKey}
+                            </span>
                           </div>
-                          <span className="text-[10px] text-[#8faea5] block font-mono">
+                          <span className="text-[10px] text-[#8faea5] block font-mono mt-0.5">
                             {api.model} · {api.precision}
+                            {api.lastTestLatencyMs ? ` · 🟢 ${api.lastTestLatencyMs}ms` : ''}
                           </span>
                         </div>
                       </div>
                       {isThisActive ? (
-                        <span className="text-[10px] font-mono font-bold text-[#3ddc84] bg-[#0d2a23] px-1.5 py-0.5 rounded border border-[#22403a] flex items-center gap-1">
-                          <Check className="w-3 h-3 text-[#3ddc84]" />
+                        <span className="text-[10px] font-mono font-bold text-[#37d6c0] bg-[#0d2a23] px-1.5 py-0.5 rounded border border-[#22403a] flex items-center gap-1">
+                          <Check className="w-3 h-3 text-[#37d6c0]" />
                           <span>نشط</span>
                         </span>
                       ) : (
@@ -507,19 +610,53 @@ export const ApiQuickSwitcher: React.FC<ApiQuickSwitcherProps> = ({
               </div>
             )}
 
-            {/* Footer: Open full API modal for editing / adding */}
-            <div className="pt-2 mt-1 border-t border-[#1b3630]">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  onOpenApiModal();
-                }}
-                className="w-full py-2 px-3 rounded-xl text-xs font-semibold text-[#37d6c0] hover:text-white bg-[#122622] hover:bg-[#1a3832] border border-[#22403a] hover:border-[#37d6c0] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>Manage, Edit & Add APIs…</span>
-              </button>
+            {/* Footer Actions: Command Palette HUD, Benchmark, Manage APIs */}
+            <div className="pt-2 mt-1 border-t border-[#1b3630] flex flex-col gap-1.5">
+              {onOpenCommandPalette && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onOpenCommandPalette();
+                  }}
+                  className="w-full py-1.5 px-3 rounded-xl text-xs font-semibold text-[#ffb454] hover:text-white bg-[#1a1710] hover:bg-[#2e2311] border border-[#543b17] hover:border-[#ffb454] flex items-center justify-between transition-all cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Command className="w-3.5 h-3.5 text-[#ffb454]" />
+                    <span>Quick Command HUD (نافذة الانتقال الفوري)</span>
+                  </span>
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-[#091614] text-[#8faea5] border border-[#3b2a12]">
+                    Ctrl+K
+                  </span>
+                </button>
+              )}
+
+              <div className="flex items-center gap-1.5">
+                {onRunSpeedBenchmark && (
+                  <button
+                    type="button"
+                    onClick={onRunSpeedBenchmark}
+                    disabled={isBenchmarking}
+                    className="flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold text-[#3ddc84] hover:text-white bg-[#0f241d] hover:bg-[#18382e] border border-[#235041] hover:border-[#3ddc84] flex items-center justify-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                    title="فحص سرعة استجابة المحركات"
+                  >
+                    <Activity className={`w-3 h-3 ${isBenchmarking ? 'animate-spin' : ''}`} />
+                    <span>{isBenchmarking ? 'جارٍ الفحص…' : '⚡ فحص السرعة'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onOpenApiModal();
+                  }}
+                  className="flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold text-[#37d6c0] hover:text-white bg-[#122622] hover:bg-[#1a3832] border border-[#22403a] hover:border-[#37d6c0] flex items-center justify-center gap-1 transition-all cursor-pointer"
+                >
+                  <Sliders className="w-3 h-3" />
+                  <span>إدارة المحركات</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

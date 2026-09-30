@@ -57,6 +57,7 @@ interface StudioPanelProps {
   canUndo: boolean;
   canRedo: boolean;
   onToast: (msg: string, type?: 'ok' | 'err') => void;
+  onOpenCommandPalette?: () => void;
 }
 
 export const StudioPanel: React.FC<StudioPanelProps> = ({
@@ -85,6 +86,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
   canUndo,
   canRedo,
   onToast,
+  onOpenCommandPalette,
 }) => {
   const t = I18N[lang].s;
   const promptText = item?.finalPrompt || '';
@@ -253,7 +255,7 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
         </label>
       </div>
 
-      {/* Direct API Switcher Bar (الانتقال المباشر بين محركات الـ API) */}
+      {/* Direct API Switcher Bar (الانتقال المباشر والذكي بين محركات الـ API) */}
       {onSelectApi && (
         <div className="flex items-center justify-between gap-2 p-2 bg-[#081513] border border-[#1b3630] rounded-xl flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -262,48 +264,103 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
               <span>Direct API:</span>
             </span>
 
+            {/* Smart Auto-Routing Pill */}
+            {onAdvToggle && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAdvToggle('smartRouting', !adv.smartRouting);
+                  onToast(
+                    !adv.smartRouting
+                      ? '🤖 تم تفعيل التوجيه الذكي التلقائي للنماذج ✓'
+                      : 'تم الرجوع للوضع اليدوي',
+                    'ok'
+                  );
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
+                  adv.smartRouting
+                    ? 'bg-[#ffb45422] text-[#ffb454] border border-[#ffb45488] shadow-[0_0_10px_rgba(255,180,84,0.3)] ring-1 ring-[#ffb45444] animate-pulse'
+                    : 'bg-[#0e1d1a] text-[#8faea5] hover:text-white border border-[#22403a] hover:border-[#ffb454]'
+                }`}
+                title="التوجيه الذكي التلقائي لاختيار النموذج الأنسب وتفادي الأخطاء (Alt+S)"
+              >
+                <Sparkles className={`w-3 h-3 ${adv.smartRouting ? 'text-[#ffb454]' : 'text-[#8faea5]'}`} />
+                <span>🤖 Auto-Route</span>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[#0a1614] text-[#8faea5] font-normal">
+                  Alt+S
+                </span>
+              </button>
+            )}
+
             {/* Built-in Gemini Engine */}
             <button
               type="button"
               onClick={() => {
+                if (adv.smartRouting && onAdvToggle) onAdvToggle('smartRouting', false);
                 onSelectApi(null);
-                onToast('Switched to Built-in Google Gemini 3.8 Flash ✓', 'ok');
+                onToast('⚡ انتقلت مباشرة إلى Built-in Google Gemini 3.8 Flash ✓', 'ok');
               }}
               className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
-                activeApiId === null
-                  ? 'bg-[#3ddc8422] text-[#3ddc84] border border-[#3ddc8466] shadow-[0_0_10px_rgba(61,220,132,0.2)] animate-switch-ripple'
+                !adv.smartRouting && activeApiId === null
+                  ? 'bg-[#3ddc8422] text-[#3ddc84] border border-[#3ddc8466] shadow-[0_0_10px_rgba(61,220,132,0.2)] animate-switch-ripple ring-1 ring-[#3ddc8444]'
                   : 'bg-[#0e1d1a] text-[#8faea5] hover:text-white border border-[#22403a] hover:border-[#37d6c0]'
               }`}
-              title="انتقال مباشر إلى Google Gemini 3.8 Flash (Built-in)"
+              title="انتقال مباشر إلى Google Gemini 3.8 Flash (Alt+1)"
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  activeApiId === null ? 'bg-[#3ddc84] animate-pulse' : 'bg-[#54736c]'
+                  !adv.smartRouting && activeApiId === null ? 'bg-[#3ddc84] animate-pulse' : 'bg-[#54736c]'
                 }`}
               />
               <span>Gemini 3.8</span>
-              <span className="text-[9px] px-1 py-0.2 rounded bg-[#3ddc8418] text-[#3ddc84] font-normal">
-                SERVER
+              <span className="text-[9px] px-1 py-0.2 rounded bg-[#0a1614] text-[#8faea5] font-normal">
+                Alt+1
               </span>
             </button>
 
+            {/* 100% Offline Local Engine Direct Button */}
+            {onAdvToggle && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (adv.smartRouting) onAdvToggle('smartRouting', false);
+                  onAdvToggle('localEngineMode', 'deep');
+                  onToast('⚡ انتقلت مباشرة إلى المحرك المحلي 100% Offline Local Engine ✓', 'ok');
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
+                  !adv.smartRouting && adv.localEngineMode === 'deep'
+                    ? 'bg-[#38bdf822] text-[#38bdf8] border border-[#38bdf866] shadow-[0_0_10px_rgba(56,189,248,0.2)] ring-1 ring-[#38bdf844]'
+                    : 'bg-[#0e1d1a] text-[#8faea5] hover:text-white border border-[#22403a] hover:border-[#38bdf8]'
+                }`}
+                title="انتقال مباشر إلى المحرك المحلي دون إنترنت (Alt+0)"
+              >
+                <Cpu className="w-3 h-3 text-[#38bdf8]" />
+                <span>Local Offline</span>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[#0a1614] text-[#8faea5] font-normal">
+                  Alt+0
+                </span>
+              </button>
+            )}
+
             {/* Custom User APIs */}
-            {apis.map((api) => {
-              const isActive = activeApiId === api.id;
+            {apis.map((api, idx) => {
+              const isActive = !adv.smartRouting && activeApiId === api.id;
+              const shortcut = `Alt+${idx + 2}`;
               return (
                 <button
                   key={api.id}
                   type="button"
                   onClick={() => {
+                    if (adv.smartRouting && onAdvToggle) onAdvToggle('smartRouting', false);
                     onSelectApi(api.id);
-                    onToast(`Switched to ${api.name} (${api.model}) ✓`, 'ok');
+                    onToast(`⚡ انتقلت مباشرة إلى ${api.name} (${api.model}) ✓`, 'ok');
                   }}
                   className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
                     isActive
-                      ? 'bg-[#37d6c022] text-[#37d6c0] border border-[#37d6c066] shadow-[0_0_10px_rgba(55,214,192,0.2)] animate-switch-ripple'
+                      ? 'bg-[#37d6c022] text-[#37d6c0] border border-[#37d6c066] shadow-[0_0_10px_rgba(55,214,192,0.2)] animate-switch-ripple ring-1 ring-[#37d6c044]'
                       : 'bg-[#0e1d1a] text-[#8faea5] hover:text-white border border-[#22403a] hover:border-[#37d6c0]'
                   }`}
-                  title={`انتقال مباشر إلى ${api.name} (${api.model})`}
+                  title={`انتقال مباشر إلى ${api.name} (${api.model}) - ${shortcut}`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
@@ -312,11 +369,25 @@ export const StudioPanel: React.FC<StudioPanelProps> = ({
                   />
                   <span className="max-w-[120px] truncate">{api.name}</span>
                   <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-[#17302c] text-[#8faea5] font-normal">
-                    {api.provider}
+                    {shortcut}
                   </span>
                 </button>
               );
             })}
+
+            {onOpenCommandPalette && (
+              <button
+                type="button"
+                onClick={onOpenCommandPalette}
+                className="px-2 py-1 rounded-lg text-[11px] font-semibold text-[#ffb454] hover:text-white bg-[#1a1710] hover:bg-[#2e2311] border border-[#543b17] hover:border-[#ffb454] flex items-center gap-1 transition-all cursor-pointer"
+                title="فتح نافذة الانتقال المباشر الذكية السريعة (Ctrl+K)"
+              >
+                <span>⚡ HUD</span>
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[#091614] text-[#8faea5] font-normal">
+                  Ctrl+K
+                </span>
+              </button>
+            )}
 
             {onOpenApiModal && (
               <button

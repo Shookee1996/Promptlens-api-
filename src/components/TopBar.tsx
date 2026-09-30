@@ -21,6 +21,14 @@ interface TopBarProps {
   onOpenAbout: () => void;
   onOpenApi: () => void;
   isProcessing?: boolean;
+  isSmartRouting?: boolean;
+  onToggleSmartRouting?: () => void;
+  onToast?: (msg: string, type?: 'ok' | 'err') => void;
+  onOpenCommandPalette?: () => void;
+  onRunSpeedBenchmark?: () => Promise<void>;
+  isBenchmarking?: boolean;
+  smartRoutingMode?: 'auto' | 'vision' | 'speed' | 'offline';
+  onSetSmartRoutingMode?: (mode: 'auto' | 'vision' | 'speed' | 'offline') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -39,6 +47,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenAbout,
   onOpenApi,
   isProcessing,
+  isSmartRouting,
+  onToggleSmartRouting,
+  onToast,
+  onOpenCommandPalette,
+  onRunSpeedBenchmark,
+  isBenchmarking,
+  smartRoutingMode,
+  onSetSmartRoutingMode,
 }) => {
   const t = I18N[lang].s;
 
@@ -102,6 +118,14 @@ export const TopBar: React.FC<TopBarProps> = ({
           tokenStats={tokenStats}
           onResetTokens={onResetTokens}
           isProcessing={isProcessing}
+          isSmartRouting={isSmartRouting}
+          onToggleSmartRouting={onToggleSmartRouting}
+          onToast={onToast}
+          onOpenCommandPalette={onOpenCommandPalette}
+          onRunSpeedBenchmark={onRunSpeedBenchmark}
+          isBenchmarking={isBenchmarking}
+          smartRoutingMode={smartRoutingMode}
+          onSetSmartRoutingMode={onSetSmartRoutingMode}
         />
 
         <button
@@ -115,11 +139,11 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         <button
           onClick={onOpenPerf}
-          className="inline-flex items-center gap-1.5 bg-[#0f1e1c] border border-[#23423c] hover:border-[#a855f7] text-[#cfe6df] hover:text-[#d8c7ff] rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer transition-all duration-300 hover:-translate-y-0.5"
-          title="Performance"
+          className="inline-flex items-center gap-1.5 bg-[#0f1e1c] border border-[#23423c] hover:border-[#a855f7] text-[#cfe6df] hover:text-[#d8c7ff] rounded-xl px-3.5 py-2 text-xs font-semibold cursor-pointer transition-all duration-300 hover:-translate-y-0.5 shadow-sm"
+          title="Performance & Token Analytics Dashboard"
         >
           <Activity className="w-3.5 h-3.5 text-[#a855f7]" />
-          <span>⚡</span>
+          <span>Analytics ⚡</span>
         </button>
 
         <button
